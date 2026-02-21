@@ -1,3 +1,348 @@
 {
-  "games": []
+  "games": [
+    {
+      "id": "game_a1b2c3d4",
+      "date": "2026-02-21",
+      "screenshot": "Screenshot 2026-02-21 134108.png",
+      "opponent": "Brazil",
+      "score": {
+        "us": 81,
+        "them": 62
+      },
+      "quarters": {
+        "us": [
+          15,
+          20,
+          26,
+          20
+        ],
+        "them": [
+          16,
+          14,
+          20,
+          12
+        ]
+      },
+      "players": [
+        {
+          "name": "OBJ3onTwitch",
+          "grade": "A",
+          "pts": 21,
+          "reb": 0,
+          "ast": 0,
+          "stl": 1,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 7,
+          "fga": 12,
+          "tpm": 7,
+          "tpa": 10,
+          "ftm": 0,
+          "fta": 0,
+          "confidence": {
+            "overall": 0.95,
+            "low_fields": []
+          }
+        },
+        {
+          "name": "MiamiOatMario",
+          "grade": "A",
+          "pts": 38,
+          "reb": 0,
+          "ast": 1,
+          "stl": 1,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 14,
+          "fga": 23,
+          "tpm": 10,
+          "tpa": 19,
+          "ftm": 0,
+          "fta": 0,
+          "confidence": {
+            "overall": 0.95,
+            "low_fields": []
+          }
+        },
+        {
+          "name": "Player3_USA_G1",
+          "grade": "A",
+          "pts": 11,
+          "reb": 8,
+          "ast": 10,
+          "stl": 3,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 4,
+          "fga": 7,
+          "tpm": 1,
+          "tpa": 3,
+          "ftm": 1,
+          "fta": 2,
+          "confidence": {
+            "overall": 0.55,
+            "low_fields": [
+              "name",
+              "pts",
+              "reb",
+              "ast",
+              "stl",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa",
+              "ftm",
+              "fta"
+            ]
+          }
+        },
+        {
+          "name": "Player4_USA_G1",
+          "grade": "A",
+          "pts": 6,
+          "reb": 8,
+          "ast": 8,
+          "stl": 2,
+          "blk": 1,
+          "fls": 0,
+          "to": 0,
+          "fgm": 3,
+          "fga": 6,
+          "tpm": 0,
+          "tpa": 2,
+          "ftm": 0,
+          "fta": 0,
+          "confidence": {
+            "overall": 0.5,
+            "low_fields": [
+              "name",
+              "pts",
+              "reb",
+              "ast",
+              "stl",
+              "blk",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa"
+            ]
+          }
+        },
+        {
+          "name": "DOEMORNING",
+          "grade": "A",
+          "pts": 5,
+          "reb": 4,
+          "ast": 5,
+          "stl": 2,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 3,
+          "fga": 6,
+          "tpm": 0,
+          "tpa": 2,
+          "ftm": 0,
+          "fta": 0,
+          "confidence": {
+            "overall": 0.6,
+            "low_fields": [
+              "pts",
+              "reb",
+              "ast",
+              "stl",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "game_e5f6g7h8",
+      "date": "2026-02-21",
+      "screenshot": "Screenshot 2026-02-21 134134.png",
+      "opponent": "Legendary",
+      "score": {
+        "us": 71,
+        "them": 51
+      },
+      "quarters": {
+        "us": [
+          20,
+          18,
+          18,
+          15
+        ],
+        "them": [
+          9,
+          19,
+          21,
+          2
+        ]
+      },
+      "players": [
+        {
+          "name": "OBJ3onTwitch",
+          "grade": "A",
+          "pts": 17,
+          "reb": 5,
+          "ast": 0,
+          "stl": 0,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 5,
+          "fga": 11,
+          "tpm": 3,
+          "tpa": 8,
+          "ftm": 2,
+          "fta": 2,
+          "confidence": {
+            "overall": 0.65,
+            "low_fields": [
+              "reb",
+              "ast",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa",
+              "ftm",
+              "fta"
+            ]
+          }
+        },
+        {
+          "name": "JohnnyRed",
+          "grade": "A",
+          "pts": 17,
+          "reb": 3,
+          "ast": 0,
+          "stl": 0,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 6,
+          "fga": 10,
+          "tpm": 3,
+          "tpa": 8,
+          "ftm": 2,
+          "fta": 3,
+          "confidence": {
+            "overall": 0.55,
+            "low_fields": [
+              "name",
+              "pts",
+              "reb",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa",
+              "ftm",
+              "fta"
+            ]
+          }
+        },
+        {
+          "name": "Player3_USA_G2",
+          "grade": "A",
+          "pts": 10,
+          "reb": 4,
+          "ast": 5,
+          "stl": 2,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 4,
+          "fga": 5,
+          "tpm": 1,
+          "tpa": 2,
+          "ftm": 1,
+          "fta": 2,
+          "confidence": {
+            "overall": 0.5,
+            "low_fields": [
+              "name",
+              "pts",
+              "reb",
+              "ast",
+              "stl",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa",
+              "ftm",
+              "fta"
+            ]
+          }
+        },
+        {
+          "name": "Player4_USA_G2",
+          "grade": "A",
+          "pts": 10,
+          "reb": 4,
+          "ast": 5,
+          "stl": 2,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 4,
+          "fga": 5,
+          "tpm": 0,
+          "tpa": 0,
+          "ftm": 2,
+          "fta": 2,
+          "confidence": {
+            "overall": 0.5,
+            "low_fields": [
+              "name",
+              "pts",
+              "reb",
+              "ast",
+              "stl",
+              "fgm",
+              "fga",
+              "tpm",
+              "tpa",
+              "ftm",
+              "fta"
+            ]
+          }
+        },
+        {
+          "name": "JOEMORNING",
+          "grade": "A+",
+          "pts": 17,
+          "reb": 11,
+          "ast": 0,
+          "stl": 0,
+          "blk": 0,
+          "fls": 0,
+          "to": 0,
+          "fgm": 7,
+          "fga": 12,
+          "tpm": 0,
+          "tpa": 0,
+          "ftm": 3,
+          "fta": 3,
+          "confidence": {
+            "overall": 0.7,
+            "low_fields": [
+              "reb",
+              "ast",
+              "fgm",
+              "fga",
+              "ftm",
+              "fta"
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }
