@@ -109,18 +109,28 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
                   - to)
 
             tpa  = p.get("tpa", 0)
+            # Player possessions used this game
+            p_poss = fga + 0.44 * fta + to
+            # Team possessions this game (for context)
+            team_fga = sum(q.get("fga", 0) for q in game["players"])
+            team_fta = sum(q.get("fta", 0) for q in game["players"])
+            team_to  = sum(q.get("to",  0) for q in game["players"])
+            team_poss = team_fga + 0.44 * team_fta + team_to
+
             player_games[key].append({
-                "gs":      gs,
-                "pts":     pts,
-                "fgm":     fgm,
-                "fga":     fga,
-                "tpm":     tpm,
-                "tpa":     tpa,
-                "ftm":     ftm,
-                "fta":     fta,
-                "ast":     ast,
-                "to":      to,
-                "won":     usa_won,
+                "gs":         gs,
+                "pts":        pts,
+                "fgm":        fgm,
+                "fga":        fga,
+                "tpm":        tpm,
+                "tpa":        tpa,
+                "ftm":        ftm,
+                "fta":        fta,
+                "ast":        ast,
+                "to":         to,
+                "won":        usa_won,
+                "p_poss":     p_poss,
+                "team_poss":  team_poss,
             })
             pos_counts[name][pos] = pos_counts[name].get(pos, 0) + 1
 
@@ -173,6 +183,15 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
         # 3PT rate: % of FGA that are 3s
         three_rate    = round(total_tpa / total_fga * 100, 1) if total_fga > 0 else None
 
+        # Possessions used per game (player-level: FGA + 0.44*FTA + TO)
+        total_p_poss    = sum(g["p_poss"]    for g in pg_list)
+        total_team_poss = sum(g["team_poss"] for g in pg_list)
+        poss_used_pg    = round(total_p_poss / n, 1)
+        # Offensive Rating: pts per 100 possessions used
+        off_rtg_player  = round(total_pts / total_p_poss * 100, 1) if total_p_poss > 0 else None
+        # Usage Rate: player poss / team poss (already in get_usage_and_pie but useful here too)
+        usg_pct         = round(total_p_poss / total_team_poss * 100, 1) if total_team_poss > 0 else None
+
         rows.append({
             "name":           name,
             "pos":            pos,
@@ -188,6 +207,9 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
             "three_pa_pg":    three_pa_pg,
             "three_pct":      three_pct,
             "three_rate":     three_rate,
+            "poss_used_pg":   poss_used_pg,
+            "off_rtg":        off_rtg_player,
+            "usg_pct":        usg_pct,
         })
 
     return pd.DataFrame(rows, columns=[
@@ -195,6 +217,7 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
         "avg_game_score", "gs_std", "ts_pct", "efg_pct",
         "ast_to", "scoring_load",
         "three_pm_pg", "three_pa_pg", "three_pct", "three_rate",
+        "poss_used_pg", "off_rtg", "usg_pct",
     ])
 
 
@@ -769,8 +792,21 @@ def get_team_stats_by_game(games: list) -> pd.DataFrame:
         them_reb = sum(p.get("reb", 0) for p in opp_players)
         them_ast = sum(p.get("ast", 0) for p in opp_players)
         them_to  = sum(p.get("to",  0) for p in opp_players)
+        them_fga = sum(p.get("fga", 0) for p in opp_players)
+        them_fta = sum(p.get("fta", 0) for p in opp_players)
 
-        pace_est  = round(us_fga + 0.44 * us_fta + us_to, 1)
+        # Estimated possessions: FGA + 0.44*FTA + TO
+        us_poss   = round(us_fga   + 0.44 * us_fta   + us_to,   1)
+        opp_poss  = round(them_fga + 0.44 * them_fta + them_to, 1) if opp_players else us_poss
+        # Pace = avg possessions per game (both teams)
+        pace      = round((us_poss + opp_poss) / 2, 1)
+        # Offensive Rating = pts scored per 100 possessions
+        off_rtg   = round(us_pts   / us_poss   * 100, 1) if us_poss  > 0 else None
+        # Defensive Rating = pts allowed per 100 possessions
+        def_rtg   = round(them_pts / opp_poss  * 100, 1) if opp_poss > 0 else None
+        # Net Rating = OffRtg - DefRtg
+        net_rtg   = round(off_rtg - def_rtg, 1) if off_rtg is not None and def_rtg is not None else None
+
         fg_pct    = round(us_fgm / us_fga * 100, 1) if us_fga > 0 else None
         three_pct = round(us_tpm / us_tpa * 100, 1) if us_tpa > 0 else None
         ts_denom  = 2 * (us_fga + 0.44 * us_fta)
@@ -797,10 +833,16 @@ def get_team_stats_by_game(games: list) -> pd.DataFrame:
             "us_three_pct": three_pct,
             "us_ts_pct":    ts_pct,
             "ast_to_ratio": ast_to,
-            "pace_est":     pace_est,
+            "us_poss":      us_poss,
+            "opp_poss":     opp_poss,
+            "pace":         pace,
+            "off_rtg":      off_rtg,
+            "def_rtg":      def_rtg,
+            "net_rtg":      net_rtg,
+            "pace_est":     us_poss,   # keep old key for backwards compat
             "team_gs":      team_gs,
             "reb_margin":   us_reb - them_reb,
-            "to_margin":    them_to - us_to,  # positive = we force more TOs than we commit
+            "to_margin":    them_to - us_to,
         })
     return pd.DataFrame(rows)
 

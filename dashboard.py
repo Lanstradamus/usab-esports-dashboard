@@ -684,6 +684,9 @@ with tab_advanced:
             "3PA/G":       leaderboard["three_pa_pg"].values,
             "3P%":         [fmt_pct(v) for v in leaderboard["three_pct"]],
             "3PT Rate":    [fmt_pct(v) for v in leaderboard["three_rate"]],
+            "Poss/G":      leaderboard["poss_used_pg"].values,
+            "Off Rtg":     [fmt_pct(v).replace("%","") if v is not None and pd.notna(v) else "N/A" for v in leaderboard["off_rtg"]],
+            "USG%":        [fmt_pct(v) for v in leaderboard["usg_pct"]],
             "AST/TO":      [fmt_asto(v) for v in leaderboard["ast_to"]],
             "Shot Load":   leaderboard["scoring_load"].values,
             "Win%":        [fmt_pct(v) for v in leaderboard["win_pct"]],
@@ -698,11 +701,12 @@ with tab_advanced:
                 "GS σ":       st.column_config.NumberColumn("GS σ (lower=better)"),
                 "3PM/G":      st.column_config.NumberColumn("3PM/G",  format="%.1f"),
                 "3PA/G":      st.column_config.NumberColumn("3PA/G",  format="%.1f"),
+                "Poss/G":     st.column_config.NumberColumn("Poss/G", format="%.1f"),
                 "Shot Load":  st.column_config.NumberColumn("Shot Load", format="%.1f"),
             }
         )
 
-        st.caption("**Game Score**: Hollinger composite per-game rating   |   **GS σ**: consistency (lower = more consistent)   |   **TS%**: True Shooting   |   **eFG%**: Effective FG   |   **3PT Rate**: % of shot attempts that are 3s   |   **Shot Load**: avg shot attempts per game")
+        st.caption("**Game Score**: Hollinger composite   |   **TS%/eFG%**: shooting efficiency   |   **3PT Rate**: % of shots that are 3s   |   **Poss/G**: possessions used per game (FGA+0.44×FTA+TO)   |   **Off Rtg**: pts scored per 100 possessions   |   **USG%**: % of team possessions used")
 
         st.divider()
 
@@ -1548,7 +1552,7 @@ with tab_analytics:
 
         # ── Section A: Season Summary Metrics ─────────────────
         st.markdown("### Season Summary")
-        _ca1, _ca2, _ca3, _ca4, _ca5, _ca6 = st.columns(6)
+        _ca1, _ca2, _ca3, _ca4, _ca5, _ca6, _ca7, _ca8 = st.columns(8)
         if not team_ts.empty:
             _ca1.metric("Avg Pts Scored",   round(team_ts["us_pts"].mean(), 1))
             _ca2.metric("Avg Pts Allowed",  round(team_ts["them_pts"].mean(), 1))
@@ -1558,6 +1562,13 @@ with tab_analytics:
             _ca5.metric("Avg Turnovers",    round(team_ts["us_to"].mean(), 1))
             _ca6.metric("Avg Team TS%",
                         f"{round(team_ts['us_ts_pct'].mean(), 1)}%" if team_ts["us_ts_pct"].notna().any() else "N/A")
+            _ca7.metric("Off Rtg",
+                        f"{round(team_ts['off_rtg'].mean(), 1)}" if "off_rtg" in team_ts and team_ts["off_rtg"].notna().any() else "N/A",
+                        help="Points scored per 100 possessions")
+            _ca8.metric("Net Rtg",
+                        f"{round(team_ts['net_rtg'].mean(), 1):+.1f}" if "net_rtg" in team_ts and team_ts["net_rtg"].notna().any() else "N/A",
+                        delta=None,
+                        help="Offensive Rating minus Defensive Rating")
 
         st.divider()
 
@@ -1635,20 +1646,82 @@ with tab_analytics:
         st.divider()
 
         # ── Section E: Possession & Pace ──────────────────────
-        st.markdown("### Pace & Possession Estimates")
-        if not team_ts.empty and "pace_est" in team_ts.columns:
-            fig_pace = px.bar(
-                team_ts,
-                x="game_label", y="pace_est",
-                color="result",
-                color_discrete_map={"W": "#4CAF50", "L": "#F44336"},
-                title="Estimated Possessions Per Game",
-                labels={"pace_est": "Est. Possessions", "game_label": "Game"}
+        st.markdown("### Possessions, Pace & Ratings")
+        st.caption("Possessions = FGA + 0.44×FTA + TO (NBA standard estimate).  Off/Def Rtg = pts per 100 possessions.")
+        if not team_ts.empty and "us_poss" in team_ts.columns:
+
+            # Season avg KPIs
+            _pe1, _pe2, _pe3, _pe4, _pe5 = st.columns(5)
+            _avg_us_poss  = round(team_ts["us_poss"].mean(), 1)
+            _avg_opp_poss = round(team_ts["opp_poss"].mean(), 1)
+            _avg_pace     = round(team_ts["pace"].mean(), 1)
+            _avg_off      = round(team_ts["off_rtg"].dropna().mean(), 1) if team_ts["off_rtg"].notna().any() else None
+            _avg_def      = round(team_ts["def_rtg"].dropna().mean(), 1) if team_ts["def_rtg"].notna().any() else None
+            _avg_net      = round(team_ts["net_rtg"].dropna().mean(), 1) if team_ts["net_rtg"].notna().any() else None
+
+            _pe1.metric("Avg USA Poss/G",  _avg_us_poss,  help="Estimated possessions USA uses per game")
+            _pe2.metric("Avg Opp Poss/G",  _avg_opp_poss, help="Estimated possessions opponents use per game")
+            _pe3.metric("Avg Pace",        _avg_pace,     help="Avg possessions both teams combined ÷ 2")
+            _pe4.metric("Off Rtg",         f"{_avg_off}" if _avg_off else "N/A",
+                        delta=f"{round(_avg_off - _avg_def, 1):+.1f} net" if _avg_off and _avg_def else None,
+                        help="Points scored per 100 possessions")
+            _pe5.metric("Def Rtg",         f"{_avg_def}" if _avg_def else "N/A",
+                        help="Points allowed per 100 possessions (lower = better)")
+
+            st.divider()
+
+            # USA poss vs Opp poss per game — dual bar
+            _poss_rows = []
+            for _, row in team_ts.iterrows():
+                _poss_rows.append({"Game": row["game_label"], "Possessions": row["us_poss"],  "Team": "USA"})
+                _poss_rows.append({"Game": row["game_label"], "Possessions": row["opp_poss"], "Team": "Opponent"})
+            fig_poss = px.bar(
+                pd.DataFrame(_poss_rows),
+                x="Game", y="Possessions", color="Team", barmode="group",
+                color_discrete_map={"USA": "#1565C0", "Opponent": "#C62828"},
+                title="Estimated Possessions Per Game — USA vs Opponent",
+                text="Possessions"
             )
-            fig_pace.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
+            fig_poss.update_traces(texttemplate="%{text:.0f}", textposition="outside")
+            fig_poss.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
                                    font_color="white", xaxis_tickangle=-45)
-            st.plotly_chart(fig_pace, use_container_width=True)
-            st.caption("Pace = FGA + 0.44×FTA + TO (proxy for possessions used per game)")
+            st.plotly_chart(fig_poss, use_container_width=True)
+
+            # Off Rtg / Def Rtg / Net Rtg per game
+            _rtg_df = team_ts[team_ts["off_rtg"].notna() & team_ts["def_rtg"].notna()].copy()
+            if not _rtg_df.empty:
+                fig_rtg = go.Figure()
+                fig_rtg.add_trace(go.Scatter(
+                    x=_rtg_df["game_label"], y=_rtg_df["off_rtg"],
+                    mode="lines+markers", name="Off Rtg",
+                    line=dict(color="#1E88E5", width=2),
+                    marker=dict(size=8)
+                ))
+                fig_rtg.add_trace(go.Scatter(
+                    x=_rtg_df["game_label"], y=_rtg_df["def_rtg"],
+                    mode="lines+markers", name="Def Rtg",
+                    line=dict(color="#E53935", width=2, dash="dash"),
+                    marker=dict(size=8)
+                ))
+                fig_rtg.add_trace(go.Bar(
+                    x=_rtg_df["game_label"], y=_rtg_df["net_rtg"],
+                    name="Net Rtg",
+                    marker_color=[("#4CAF50" if v >= 0 else "#F44336") for v in _rtg_df["net_rtg"]],
+                    opacity=0.5, yaxis="y2"
+                ))
+                fig_rtg.update_layout(
+                    title="Offensive / Defensive / Net Rating by Game",
+                    xaxis_tickangle=-45,
+                    plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white",
+                    yaxis=dict(title="Rating (pts/100 poss)"),
+                    yaxis2=dict(title="Net Rtg", overlaying="y", side="right", showgrid=False),
+                    legend=dict(bgcolor="#0e1117"),
+                    hovermode="x unified"
+                )
+                fig_rtg.add_hline(y=100, line_dash="dot", line_color="#555",
+                                  annotation_text="100 baseline")
+                st.plotly_chart(fig_rtg, use_container_width=True)
+                st.caption("**Off Rtg** = pts scored per 100 poss (higher = better)  |  **Def Rtg** = pts allowed per 100 poss (lower = better)  |  **Net Rtg** = Off − Def (green = won the possession battle)")
 
         # ── Section F: Quarter Box Score Grid ─────────────────
         if not q_stats.empty:
