@@ -24,9 +24,11 @@ st.set_page_config(
 )
 
 # ── Authentication ──────────────────────────────────────────
-_creds = st.secrets.get("credentials", {})
+import json as _json
+_creds_raw = st.secrets.get("credentials", {})
+_creds = _json.loads(_json.dumps(dict(_creds_raw)))  # deep convert to plain dict
 authenticator = stauth.Authenticate(
-    credentials=dict(_creds),
+    credentials=_creds,
     cookie_name="usab_esports",
     cookie_key=st.secrets.get("cookie_key", "changeme"),
     cookie_expiry_days=7,
