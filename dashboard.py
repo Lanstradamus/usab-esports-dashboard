@@ -1939,7 +1939,19 @@ with tab_opp_intel:
                     if wp <= 25:   return ["background-color: #2b1000"] * len(row)
                     return [""] * len(row)
 
-                st.dataframe(_kr_disp.style.apply(_kr_style, axis=1), hide_index=True, use_container_width=True)
+                st.dataframe(
+                    _kr_disp.style.apply(_kr_style, axis=1),
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "GP":       st.column_config.NumberColumn("GP",       format="%d"),
+                        "PPG":      st.column_config.NumberColumn("PPG",      format="%.1f"),
+                        "APG":      st.column_config.NumberColumn("APG",      format="%.1f"),
+                        "RPG":      st.column_config.NumberColumn("RPG",      format="%.1f"),
+                        "TS%":      st.column_config.NumberColumn("TS%",      format="%.1f%%"),
+                        "USA Win%": st.column_config.NumberColumn("USA Win%", format="%.1f%%"),
+                    }
+                )
 
                 fig_kr = px.scatter(
                     _krypto_all, x="avg_pts", y="usa_win_pct",
@@ -1981,8 +1993,26 @@ with tab_opp_intel:
                     if "Moderate" in str(lv): return ["background-color: #2a2a00"] * len(row)
                     return [""] * len(row)
 
-                st.dataframe(disp.style.apply(_threat_row_style, axis=1),
-                             hide_index=True, use_container_width=True)
+                st.dataframe(
+                    disp.style.apply(_threat_row_style, axis=1),
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Games":        st.column_config.NumberColumn("GP",       format="%d"),
+                        "Avg Pts":      st.column_config.NumberColumn("PPG",      format="%.1f"),
+                        "Avg Reb":      st.column_config.NumberColumn("RPG",      format="%.1f"),
+                        "Avg Ast":      st.column_config.NumberColumn("APG",      format="%.1f"),
+                        "Avg Stl":      st.column_config.NumberColumn("SPG",      format="%.1f"),
+                        "Avg Blk":      st.column_config.NumberColumn("BPG",      format="%.1f"),
+                        "Avg To":       st.column_config.NumberColumn("TO/G",     format="%.1f"),
+                        "Fg Pct":       st.column_config.NumberColumn("FG%",      format="%.1f%%"),
+                        "Three Pct":    st.column_config.NumberColumn("3P%",      format="%.1f%%"),
+                        "Ts Pct":       st.column_config.NumberColumn("TS%",      format="%.1f%%"),
+                        "Efg Pct":      st.column_config.NumberColumn("eFG%",     format="%.1f%%"),
+                        "Usa Win Pct":  st.column_config.NumberColumn("USA Win%", format="%.1f%%"),
+                        "Threat Score": st.column_config.NumberColumn("Threat Score", format="%.1f"),
+                    }
+                )
 
 
 # ══════════════════════════════════════════════════════════
