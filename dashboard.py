@@ -1276,17 +1276,22 @@ with tab_lineup:
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
 
-            # Stacked bar: who provides what
+            # Stacked bar: who provides what — sorted by value so biggest contributor is on bottom
             st.markdown("### 🏗️ Lineup Contribution Breakdown")
             contr_rows = []
             for _, row in lineup_df.iterrows():
                 for stat in ["pts","reb","ast","stl","blk"]:
                     contr_rows.append({"Player": row["name"], "Stat": stat.upper(),
                                        "Value": float(row[stat]) if pd.notna(row[stat]) else 0})
+            contr_df = pd.DataFrame(contr_rows)
+            # Sort players by total contribution (sum across all stats) so biggest is always bottom
+            player_totals = contr_df.groupby("Player")["Value"].sum().sort_values(ascending=False)
+            player_order  = player_totals.index.tolist()
             fig_contr = px.bar(
-                pd.DataFrame(contr_rows),
+                contr_df,
                 x="Stat", y="Value", color="Player", barmode="stack",
-                title="Who Contributes What in This Lineup"
+                title="Who Contributes What in This Lineup",
+                category_orders={"Player": player_order}
             )
             fig_contr.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
             st.plotly_chart(fig_contr, use_container_width=True)
