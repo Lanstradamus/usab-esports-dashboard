@@ -47,13 +47,33 @@ if not st.session_state.get("authentication_status"):
 
 # ── Load data ──────────────────────────────────────────────
 approved_data = load_games()
-games = approved_data["games"]
+_all_games = approved_data["games"]
 pending_data = load_pending()
 pending_games = pending_data.get("pending", [])
 
 st.title("🏀 USAB Esports — 2K Stats Dashboard")
 
 with st.sidebar:
+    st.markdown("### 🔍 Filter by Opponent")
+    _all_opponents = sorted(set(g.get("opponent", "?") for g in _all_games))
+    _opp_filter = st.multiselect(
+        "Show only games vs:",
+        options=_all_opponents,
+        default=[],
+        placeholder="All opponents (no filter)",
+        key="global_opp_filter",
+    )
+    # Apply filter — if nothing selected, use all games
+    games = [g for g in _all_games if g.get("opponent") in _opp_filter] if _opp_filter else _all_games
+
+    if _opp_filter:
+        _f_wins   = sum(1 for g in games if g["score"]["us"] > g["score"]["them"])
+        _f_losses = len(games) - _f_wins
+        st.caption(f"Showing **{len(games)} game{'s' if len(games) != 1 else ''}** vs {', '.join(_opp_filter)}  —  {_f_wins}W {_f_losses}L")
+    else:
+        st.caption(f"Showing all **{len(_all_games)} games**")
+
+    st.divider()
     st.markdown("### 📌 Data Notes")
     st.caption(
         "Stats are OCR-extracted from box score screenshots. "
