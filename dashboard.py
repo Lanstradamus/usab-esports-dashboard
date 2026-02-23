@@ -53,6 +53,15 @@ pending_games = pending_data.get("pending", [])
 
 st.title("🏀 USAB Esports — 2K Stats Dashboard")
 
+with st.sidebar:
+    st.markdown("### 📌 Data Notes")
+    st.caption(
+        "Stats are OCR-extracted from box score screenshots. "
+        "Numbers may be slightly off due to **quit-outs** (incomplete games), "
+        "**mid-season roster changes**, and occasional OCR read errors. "
+        "Use as a directional snapshot — not a perfect record."
+    )
+    st.divider()
 
 
 def build_stat_rows(players, grade_key="grade"):
@@ -484,51 +493,124 @@ with tab_compare:
         st.info("No approved games yet. Approve games in the Review Queue tab first.")
     else:
         st.subheader("Head-to-Head Player Comparison")
-        all_players_compare = sorted(set(normalize_name(p["name"]) for g in games for p in g["players"]))
 
-        if len(all_players_compare) < 2:
+        # Build position-aware player list: if a player played multiple positions,
+        # offer them as separate entries (e.g. "Nidal (SG)" and "Nidal (SF)")
+        _cmp_pos_counts: dict = {}
+        for g in games:
+            for p in g["players"]:
+                nm = normalize_name(p["name"])
+                pos = p.get("pos", "")
+                if nm not in _cmp_pos_counts:
+                    _cmp_pos_counts[nm] = {}
+                _cmp_pos_counts[nm][pos] = _cmp_pos_counts[nm].get(pos, 0) + 1
+
+        # Build selectable labels: "Name" if one pos, "Name (POS)" per pos if multi
+        _cmp_options = []
+        for nm in sorted(_cmp_pos_counts.keys()):
+            positions = _cmp_pos_counts[nm]
+            if len(positions) > 1:
+                for pos in sorted(positions.keys()):
+                    _cmp_options.append(f"{nm} ({pos})")
+            else:
+                _cmp_options.append(nm)
+
+        if len(_cmp_options) < 2:
             st.info("Need at least 2 players in the data to compare.")
         else:
             col_a, col_b = st.columns(2)
-            player_a = col_a.selectbox("Player A", all_players_compare, index=0, key="compare_a")
-            player_b = col_b.selectbox("Player B", all_players_compare, index=min(1, len(all_players_compare)-1), key="compare_b")
+            sel_a = col_a.selectbox("Player A", _cmp_options, index=0, key="compare_a")
+            sel_b = col_b.selectbox("Player B", _cmp_options, index=min(1, len(_cmp_options)-1), key="compare_b")
 
-            avgs_c = get_derived_stats(get_player_averages(games))
-            a_row = avgs_c[avgs_c["name"] == player_a]
-            b_row = avgs_c[avgs_c["name"] == player_b]
+            # Parse name and optional position filter from selection label
+            def _parse_cmp_sel(sel):
+                if sel.endswith(")") and " (" in sel:
+                    nm, pos = sel.rsplit(" (", 1)
+                    return nm, pos.rstrip(")")
+                return sel, None
 
-            if a_row.empty or b_row.empty:
+            cmp_name_a, cmp_pos_a = _parse_cmp_sel(sel_a)
+            cmp_name_b, cmp_pos_b = _parse_cmp_sel(sel_b)
+
+            # Show multi-position alert if stats are combined
+            for _sel_nm, _sel_pos, _sel_label in [(cmp_name_a, cmp_pos_a, "Player A"), (cmp_name_b, cmp_pos_b, "Player B")]:
+                _nm_positions = _cmp_pos_counts.get(_sel_nm, {})
+                if len(_nm_positions) > 1 and _sel_pos is None:
+                    _pos_summary = ", ".join(f"{pos} ({cnt}G)" for pos, cnt in sorted(_nm_positions.items()))
+                    st.info(f"ℹ️ **{_sel_nm}** ({_sel_label}) played multiple positions: {_pos_summary}. Stats are combined — select a specific position role above to isolate.")
+
+            # Build per-game averages filtered by position if needed
+            def _build_cmp_avgs(name, pos_filter):
+                """Compute per-game avgs for a player, optionally filtered by position."""
+                stat_keys = ["pts","reb","ast","stl","blk","fls","to","fgm","fga","tpm","tpa","ftm","fta"]
+                totals = {s: 0 for s in stat_keys}
+                gp = 0
+                for g in games:
+                    for p in g["players"]:
+                        if normalize_name(p["name"]) == name:
+                            if pos_filter is None or p.get("pos","") == pos_filter:
+                                gp += 1
+                                for s in stat_keys:
+                                    totals[s] += p.get(s, 0)
+                if gp == 0:
+                    return None, 0
+                avgs = {s: round(totals[s] / gp, 1) for s in stat_keys}
+                avgs["fg_pct"]  = round(totals["fgm"] / totals["fga"] * 100, 1) if totals["fga"] > 0 else None
+                avgs["tp_pct"]  = round(totals["tpm"] / totals["tpa"] * 100, 1) if totals["tpa"] > 0 else None
+                avgs["name"]    = name
+                avgs["pos"]     = pos_filter or max(_cmp_pos_counts[name], key=_cmp_pos_counts[name].get)
+                avgs["games"]   = gp
+                return avgs, gp
+
+            a_avgs, a_gp = _build_cmp_avgs(cmp_name_a, cmp_pos_a)
+            b_avgs, b_gp = _build_cmp_avgs(cmp_name_b, cmp_pos_b)
+
+            if a_avgs is None or b_avgs is None:
                 st.warning("One or both players not found.")
             else:
-                a = a_row.iloc[0]
-                b = b_row.iloc[0]
                 compare_stats = ["pts","reb","ast","stl","blk","to","fgm","fga","tpm","tpa"]
+                stat_labels   = ["PTS","REB","AST","STL","BLK","TO","FGM","FGA","3PM","3PA"]
+
+                # Label for chart titles includes position if filtered
+                label_a = sel_a
+                label_b = sel_b
 
                 fig_compare = px.bar(
                     pd.DataFrame({
-                        "Stat": [s.upper() for s in compare_stats],
-                        player_a: [a[s] for s in compare_stats],
-                        player_b: [b[s] for s in compare_stats],
+                        "Stat": stat_labels,
+                        label_a: [a_avgs[s] for s in compare_stats],
+                        label_b: [b_avgs[s] for s in compare_stats],
                     }).melt(id_vars="Stat", var_name="Player", value_name="Value"),
                     x="Stat", y="Value", color="Player", barmode="group",
-                    title=f"{player_a} vs {player_b} — Per Game Averages"
+                    title=f"{label_a} vs {label_b} — Per Game Averages"
                 )
+                fig_compare.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
                 st.plotly_chart(fig_compare, use_container_width=True)
 
                 st.subheader("Stat-by-Stat Breakdown")
                 breakdown_rows = []
-                for stat in compare_stats:
-                    va, vb = a[stat], b[stat]
-                    better = (player_a if va < vb else player_b if vb < va else "TIE") if stat == "to" else (player_a if va > vb else player_b if vb > va else "TIE")
-                    breakdown_rows.append({"Stat": stat.upper(), player_a: va, player_b: vb, "Edge": better})
+                for stat, slbl in zip(compare_stats, stat_labels):
+                    va, vb = a_avgs[stat], b_avgs[stat]
+                    better = (label_a if va < vb else label_b if vb < va else "TIE") if stat == "to" else (label_a if va > vb else label_b if vb > va else "TIE")
+                    breakdown_rows.append({"Stat": slbl, label_a: va, label_b: vb, "Edge": better})
+                # Also add shooting %
+                for pct_key, pct_lbl in [("fg_pct","FG%"), ("tp_pct","3P%")]:
+                    va2 = a_avgs.get(pct_key)
+                    vb2 = b_avgs.get(pct_key)
+                    if va2 is not None and vb2 is not None:
+                        better2 = label_a if va2 > vb2 else label_b if vb2 > va2 else "TIE"
+                        breakdown_rows.append({"Stat": pct_lbl, label_a: f"{va2:.1f}%", label_b: f"{vb2:.1f}%", "Edge": better2})
                 st.dataframe(pd.DataFrame(breakdown_rows), hide_index=True, use_container_width=True)
 
                 st.subheader("Win Rate When Playing")
                 wr_cols = st.columns(2)
-                for i, pname in enumerate([player_a, player_b]):
-                    pg = [g for g in games if any(normalize_name(p["name"]) == pname for p in g["players"])]
+                for i, (pname, pos_filt, lbl) in enumerate([(cmp_name_a, cmp_pos_a, label_a), (cmp_name_b, cmp_pos_b, label_b)]):
+                    pg = [g for g in games if any(
+                        normalize_name(p["name"]) == pname and (pos_filt is None or p.get("pos","") == pos_filt)
+                        for p in g["players"]
+                    )]
                     pw = sum(1 for g in pg if g["score"]["us"] > g["score"]["them"])
-                    wr_cols[i].metric(pname, f"{pw/len(pg)*100:.0f}% ({pw}W-{len(pg)-pw}L)" if pg else "N/A")
+                    wr_cols[i].metric(lbl, f"{pw/len(pg)*100:.0f}% ({pw}W-{len(pg)-pw}L)" if pg else "N/A")
 
 # ══════════════════════════════════════════════════════════
 # TAB 4: ADVANCED STATS
@@ -578,6 +660,10 @@ with tab_advanced:
             "GS σ":        leaderboard["gs_std"].values,
             "TS%":         [fmt_pct(v) for v in leaderboard["ts_pct"]],
             "eFG%":        [fmt_pct(v) for v in leaderboard["efg_pct"]],
+            "3PM/G":       leaderboard["three_pm_pg"].values,
+            "3PA/G":       leaderboard["three_pa_pg"].values,
+            "3P%":         [fmt_pct(v) for v in leaderboard["three_pct"]],
+            "3PT Rate":    [fmt_pct(v) for v in leaderboard["three_rate"]],
             "AST/TO":      [fmt_asto(v) for v in leaderboard["ast_to"]],
             "Shot Load":   leaderboard["scoring_load"].values,
             "Win%":        [fmt_pct(v) for v in leaderboard["win_pct"]],
@@ -590,11 +676,13 @@ with tab_advanced:
             column_config={
                 "Game Score": st.column_config.NumberColumn("Game Score", format="%.1f"),
                 "GS σ":       st.column_config.NumberColumn("GS σ (lower=better)"),
+                "3PM/G":      st.column_config.NumberColumn("3PM/G",  format="%.1f"),
+                "3PA/G":      st.column_config.NumberColumn("3PA/G",  format="%.1f"),
                 "Shot Load":  st.column_config.NumberColumn("Shot Load", format="%.1f"),
             }
         )
 
-        st.caption("**Game Score**: Hollinger composite per-game rating   |   **GS σ**: consistency (lower = more consistent)   |   **TS%**: True Shooting   |   **eFG%**: Effective FG   |   **Shot Load**: avg shot attempts per game")
+        st.caption("**Game Score**: Hollinger composite per-game rating   |   **GS σ**: consistency (lower = more consistent)   |   **TS%**: True Shooting   |   **eFG%**: Effective FG   |   **3PT Rate**: % of shot attempts that are 3s   |   **Shot Load**: avg shot attempts per game")
 
         st.divider()
 
@@ -619,8 +707,8 @@ with tab_advanced:
                 adv_a = adv_a_rows.iloc[0]
                 adv_b = adv_b_rows.iloc[0]
 
-                # Big 4 metrics side by side
-                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                # Big 6 metrics side by side
+                m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 
                 def _fmt_metric(val, fmt="pct"):
                     if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -637,23 +725,30 @@ with tab_advanced:
                 m_col2.metric(f"{adv_player_a} — TS%", _fmt_metric(adv_a["ts_pct"], "pct"))
                 m_col2.metric(f"{adv_player_b} — TS%", _fmt_metric(adv_b["ts_pct"], "pct"))
 
-                m_col3.metric(f"{adv_player_a} — Win%", _fmt_metric(adv_a["win_pct"], "pct"))
-                m_col3.metric(f"{adv_player_b} — Win%", _fmt_metric(adv_b["win_pct"], "pct"))
+                m_col3.metric(f"{adv_player_a} — 3P%", _fmt_metric(adv_a["three_pct"], "pct"))
+                m_col3.metric(f"{adv_player_b} — 3P%", _fmt_metric(adv_b["three_pct"], "pct"))
 
-                m_col4.metric(f"{adv_player_a} — AST/TO", _fmt_metric(adv_a["ast_to"], "ratio"))
-                m_col4.metric(f"{adv_player_b} — AST/TO", _fmt_metric(adv_b["ast_to"], "ratio"))
+                m_col4.metric(f"{adv_player_a} — 3PM/G", _fmt_metric(adv_a["three_pm_pg"], "plain"))
+                m_col4.metric(f"{adv_player_b} — 3PM/G", _fmt_metric(adv_b["three_pm_pg"], "plain"))
+
+                m_col5.metric(f"{adv_player_a} — Win%", _fmt_metric(adv_a["win_pct"], "pct"))
+                m_col5.metric(f"{adv_player_b} — Win%", _fmt_metric(adv_b["win_pct"], "pct"))
+
+                m_col6.metric(f"{adv_player_a} — AST/TO", _fmt_metric(adv_a["ast_to"], "ratio"))
+                m_col6.metric(f"{adv_player_b} — AST/TO", _fmt_metric(adv_b["ast_to"], "ratio"))
 
                 st.divider()
 
-                # Grouped bar chart: Game Score, TS%, eFG%, AST/TO, Shot Load
+                # Grouped bar chart: Game Score, TS%, eFG%, 3P%, AST/TO, Shot Load
                 def _safe(v):
                     return float(v) if v is not None and pd.notna(v) else 0.0
 
-                chart_stats = ["Game Score", "TS%", "eFG%", "AST/TO", "Shot Load"]
+                chart_stats = ["Game Score", "TS%", "eFG%", "3P%", "AST/TO", "Shot Load"]
                 a_vals = [
                     _safe(adv_a["avg_game_score"]),
                     _safe(adv_a["ts_pct"]),
                     _safe(adv_a["efg_pct"]),
+                    _safe(adv_a["three_pct"]),
                     _safe(adv_a["ast_to"]),
                     _safe(adv_a["scoring_load"]),
                 ]
@@ -661,6 +756,7 @@ with tab_advanced:
                     _safe(adv_b["avg_game_score"]),
                     _safe(adv_b["ts_pct"]),
                     _safe(adv_b["efg_pct"]),
+                    _safe(adv_b["three_pct"]),
                     _safe(adv_b["ast_to"]),
                     _safe(adv_b["scoring_load"]),
                 ]
@@ -706,12 +802,14 @@ with tab_advanced:
                     loser  = adv_player_b if winner == adv_player_a else adv_player_a
                     return f"- **{label}**: **{winner}** has the edge (+{diff:.2f} over {loser})"
 
-                verdict_lines.append(_edge("Game Score",  adv_a["avg_game_score"], adv_b["avg_game_score"]))
-                verdict_lines.append(_edge("True Shooting %", adv_a["ts_pct"],  adv_b["ts_pct"]))
-                verdict_lines.append(_edge("Effective FG %",  adv_a["efg_pct"], adv_b["efg_pct"]))
-                verdict_lines.append(_edge("Win %",           adv_a["win_pct"],  adv_b["win_pct"]))
-                verdict_lines.append(_edge_ratio("AST/TO",    adv_a["ast_to"],   adv_b["ast_to"]))
-                verdict_lines.append(_edge("Shot Load", adv_a["scoring_load"], adv_b["scoring_load"], context_only=True))
+                verdict_lines.append(_edge("Game Score",       adv_a["avg_game_score"], adv_b["avg_game_score"]))
+                verdict_lines.append(_edge("True Shooting %",  adv_a["ts_pct"],         adv_b["ts_pct"]))
+                verdict_lines.append(_edge("Effective FG %",   adv_a["efg_pct"],        adv_b["efg_pct"]))
+                verdict_lines.append(_edge("3PT %",            adv_a["three_pct"],      adv_b["three_pct"]))
+                verdict_lines.append(_edge("3PT Rate (% of FGA that are 3s)", adv_a["three_rate"], adv_b["three_rate"], context_only=True))
+                verdict_lines.append(_edge("Win %",            adv_a["win_pct"],        adv_b["win_pct"]))
+                verdict_lines.append(_edge_ratio("AST/TO",     adv_a["ast_to"],         adv_b["ast_to"]))
+                verdict_lines.append(_edge("Shot Load",        adv_a["scoring_load"],   adv_b["scoring_load"], context_only=True))
 
                 st.markdown("\n".join(verdict_lines))
 

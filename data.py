@@ -108,12 +108,14 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
                   - 0.4 * fls
                   - to)
 
+            tpa  = p.get("tpa", 0)
             player_games[key].append({
                 "gs":      gs,
                 "pts":     pts,
                 "fgm":     fgm,
                 "fga":     fga,
                 "tpm":     tpm,
+                "tpa":     tpa,
                 "ftm":     ftm,
                 "fta":     fta,
                 "ast":     ast,
@@ -141,6 +143,7 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
         total_fgm  = sum(g["fgm"]  for g in pg_list)
         total_fga  = sum(g["fga"]  for g in pg_list)
         total_tpm  = sum(g["tpm"]  for g in pg_list)
+        total_tpa  = sum(g["tpa"]  for g in pg_list)
         total_ftm  = sum(g["ftm"]  for g in pg_list)
         total_fta  = sum(g["fta"]  for g in pg_list)
         total_ast  = sum(g["ast"]  for g in pg_list)
@@ -163,6 +166,13 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
         # Win %
         win_pct = round(total_wins / n * 100, 1)
 
+        # 3PT stats per game and %
+        three_pm_pg   = round(total_tpm / n, 1)
+        three_pa_pg   = round(total_tpa / n, 1)
+        three_pct     = round(total_tpm / total_tpa * 100, 1) if total_tpa > 0 else None
+        # 3PT rate: % of FGA that are 3s
+        three_rate    = round(total_tpa / total_fga * 100, 1) if total_fga > 0 else None
+
         rows.append({
             "name":           name,
             "pos":            pos,
@@ -174,12 +184,17 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
             "efg_pct":        efg_pct,
             "ast_to":         ast_to,
             "scoring_load":   scoring_load,
+            "three_pm_pg":    three_pm_pg,
+            "three_pa_pg":    three_pa_pg,
+            "three_pct":      three_pct,
+            "three_rate":     three_rate,
         })
 
     return pd.DataFrame(rows, columns=[
         "name", "pos", "games", "win_pct",
         "avg_game_score", "gs_std", "ts_pct", "efg_pct",
-        "ast_to", "scoring_load"
+        "ast_to", "scoring_load",
+        "three_pm_pg", "three_pa_pg", "three_pct", "three_rate",
     ])
 
 
