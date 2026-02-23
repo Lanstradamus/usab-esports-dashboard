@@ -78,7 +78,7 @@ def build_stat_rows(players, grade_key="grade"):
 # ── Tabs (Review Queue is always first) ───────────────────
 tab_review, tab_games, tab_players, tab_compare, tab_advanced, tab_scouting, \
 tab_lineup, tab_teams, tab_analytics, tab_ai, tab_opp_intel, tab_clutch, \
-tab_trends, tab_pix, tab_video = st.tabs([
+tab_trends, tab_pix = st.tabs([
     f"📥 Review Queue ({len(pending_games)})",
     "📋 Games",
     "👤 Players",
@@ -93,7 +93,6 @@ tab_trends, tab_pix, tab_video = st.tabs([
     "⚡ Clutch",
     "📈 Trends",
     "🏆 Perf Index",
-    "🎥 Video",
 ])
 
 # ══════════════════════════════════════════════════════════
@@ -1963,9 +1962,3 @@ with tab_pix:
                 st.info("Need multiple games to evaluate lineup combinations.")
 
 
-# ============================================================
-# TAB 14: VIDEO ANALYSIS
-# ============================================================
-with tab_video:
-    from _video_tab import render_video_tab
-    render_video_tab()
