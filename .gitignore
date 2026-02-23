@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Debug/temp files
+debug_cells/
+debug_game2/
+debug_new/
+debug_columns.png
+debug_top_zoom.png
+dashboard_perf_index.png
+perf_index_fixed.png
+frame_samples/
+crops/
+pos_crops/
+processed_screenshots.json
+
+# WIP/scratch files
+_gen.py
+_gen_tracker.py
+_tail_part1.py
+_video_tab.py
+_write_tracker.py
+_check_record.py
+dashboard_head.py
+dashboard_wip.py
+pending.py
+add_opponent_confidence.py
+auto_extract.py
+build_review_tab.py
+extract_screenshot.py
+game_tracker.py
+update_approved_opponents.py
+update_opponents_1_11.py
+update_opponents_batch.py
+
+# Docs/plans
+docs/
+
+# Claude
+.claude/
+.playwright-mcp/
