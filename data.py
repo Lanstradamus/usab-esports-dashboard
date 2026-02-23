@@ -808,7 +808,7 @@ def get_opponent_player_intel(games: list) -> pd.DataFrame:
             d = opp_data[name]
             d["teams"].add(opp_name)
             d["games"] += 1
-            if game.get("result", "W") == "W":
+            if game["score"]["us"] > game["score"]["them"]:
                 d["usa_wins_when_faced"] += 1
             for stat in ["pts", "reb", "ast", "stl", "blk", "to",
                          "fgm", "fga", "tpm", "tpa", "ftm", "fta"]:

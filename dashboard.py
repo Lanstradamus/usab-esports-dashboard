@@ -1619,90 +1619,259 @@ with tab_opp_intel:
     if not games:
         st.info("No approved games yet.")
     else:
-        st.subheader("🕵️ Opponent Intelligence Database")
-        st.caption("Every opponent player ever faced — ranked, scouted, and threat-rated.")
+        st.subheader("🕵️ Opponent Intelligence")
+        st.caption("Full breakdown of how opponents attack us, where we're vulnerable, and who we can't stop.")
 
         opp_intel = get_opponent_player_intel(games)
 
         if opp_intel.empty:
-            st.info("No opponent player data yet. Make sure games have opponent_players data.")
+            st.info("No opponent player data yet.")
         else:
-            # Filters
-            all_opp_teams = sorted(set(opp_intel["teams"].str.split(", ").explode()))
-            filter_team = st.selectbox("Filter by opponent team:", ["All"] + all_opp_teams, key="opp_intel_team_filter")
-            filter_pos  = st.selectbox("Filter by position:", ["All", "PG", "SG", "SF", "PF", "C"], key="opp_intel_pos_filter")
+            _THREAT_COLORS = {
+                "🔴 Elite": "#C62828", "🟠 High": "#EF6C00",
+                "🟡 Moderate": "#F9A825", "🟢 Low": "#2E7D32"
+            }
 
-            filtered = opp_intel.copy()
-            if filter_team != "All":
-                filtered = filtered[filtered["teams"].str.contains(filter_team, na=False)]
-            if filter_pos != "All":
-                filtered = filtered[filtered["pos"] == filter_pos]
+            # ── SECTION 1: Season Overview KPIs ──────────────────────────
+            st.markdown("### 📊 Season Overview")
+            _oi_games_total = len(games)
+            _oi_wins  = sum(1 for g in games if g["score"]["us"] > g["score"]["them"])
+            _oi_losses = _oi_games_total - _oi_wins
+            _oi_opp_avg_pts = round(sum(g["score"]["them"] for g in games) / _oi_games_total, 1)
+            _oi_our_avg_pts = round(sum(g["score"]["us"]   for g in games) / _oi_games_total, 1)
 
-            # Threat level summary
-            st.markdown("### Threat Level Distribution")
-            threat_counts = filtered["threat_level"].value_counts()
-            tl_cols = st.columns(len(threat_counts))
-            for i, (lvl, cnt) in enumerate(threat_counts.items()):
-                tl_cols[i].metric(lvl, cnt)
+            # Opponent team stats
+            _team_rows = {}
+            for g in games:
+                opp = g.get("opponent", "?")
+                won = g["score"]["us"] > g["score"]["them"]
+                if opp not in _team_rows:
+                    _team_rows[opp] = {"gp": 0, "wins": 0, "pts_for": 0, "pts_against": 0}
+                _team_rows[opp]["gp"] += 1
+                _team_rows[opp]["wins"] += int(won)
+                _team_rows[opp]["pts_for"]     += g["score"]["us"]
+                _team_rows[opp]["pts_against"] += g["score"]["them"]
+
+            # Hardest opponent = lowest win%
+            _hardest = min(_team_rows.items(), key=lambda x: x[1]["wins"]/x[1]["gp"])
+            _easiest = max(_team_rows.items(), key=lambda x: x[1]["wins"]/x[1]["gp"])
+
+            # Kryptonite player = elite threat, 0% win rate when they're in lineup
+            _krypto = opp_intel[(opp_intel["usa_win_pct"] == 0) & (opp_intel["games"] >= 2)].sort_values("threat_score", ascending=False)
+            _krypto_name = _krypto.iloc[0]["name"] if not _krypto.empty else "None"
+
+            _ov1, _ov2, _ov3, _ov4, _ov5 = st.columns(5)
+            _ov1.metric("Record", f"{_oi_wins}W – {_oi_losses}L")
+            _ov2.metric("Avg Pts Allowed", _oi_opp_avg_pts, delta=f"{round(_oi_our_avg_pts - _oi_opp_avg_pts, 1):+.1f} margin")
+            _ov3.metric("Hardest Opponent", _hardest[0], delta=f"{round(_hardest[1]['wins']/_hardest[1]['gp']*100)}% W")
+            _ov4.metric("Best Matchup", _easiest[0], delta=f"{round(_easiest[1]['wins']/_easiest[1]['gp']*100)}% W")
+            _ov5.metric("🚨 Kryptonite Player", _krypto_name)
 
             st.divider()
 
-            # Main table
-            st.markdown("### Opponent Player Database")
-            display_cols = ["name","pos","teams","games","avg_pts","avg_reb","avg_ast",
-                            "avg_stl","avg_blk","avg_to","fg_pct","three_pct",
-                            "ts_pct","efg_pct","usa_win_pct","threat_score","threat_level"]
-            disp = filtered[[c for c in display_cols if c in filtered.columns]].copy()
-            disp.columns = [c.replace("_"," ").title() for c in disp.columns]
+            # ── SECTION 2: Team-by-Team Breakdown ────────────────────────
+            st.markdown("### 🆚 Team-by-Team Breakdown")
+            st.caption("How you perform against each opponent — click to expand scouting notes.")
 
-            def _threat_row_style(row):
-                lv = row.get("Threat Level", "")
-                if "Elite" in str(lv):   return ["background-color: #3b0000"] * len(row)
-                if "High"  in str(lv):   return ["background-color: #3b1a00"] * len(row)
-                if "Moderate" in str(lv): return ["background-color: #2a2a00"] * len(row)
+            _team_df_rows = []
+            for opp, td in _team_rows.items():
+                gp = td["gp"]
+                win_pct = round(td["wins"] / gp * 100, 1)
+                avg_for     = round(td["pts_for"] / gp, 1)
+                avg_against = round(td["pts_against"] / gp, 1)
+                margin      = round(avg_for - avg_against, 1)
+                # Find their top scorer
+                opp_players = opp_intel[opp_intel["teams"].str.contains(opp, na=False)]
+                top_scorer  = opp_players.sort_values("avg_pts", ascending=False).iloc[0]["name"] if not opp_players.empty else "?"
+                top_pts     = opp_players.sort_values("avg_pts", ascending=False).iloc[0]["avg_pts"] if not opp_players.empty else 0
+                _team_df_rows.append({
+                    "Opponent": opp, "GP": gp, "W": td["wins"], "L": gp - td["wins"],
+                    "Win%": win_pct, "Avg Pts For": avg_for, "Avg Pts Against": avg_against,
+                    "Margin": margin, "Top Scorer": f"{top_scorer} ({top_pts})"
+                })
+
+            _team_df = pd.DataFrame(_team_df_rows).sort_values("Win%", ascending=False)
+
+            def _team_win_style(row):
+                wp = row.get("Win%", 50)
+                if wp >= 60:  return ["background-color: #0d2b0d"] * len(row)
+                if wp <= 30:  return ["background-color: #2b0d0d"] * len(row)
                 return [""] * len(row)
 
-            st.dataframe(
-                disp.style.apply(_threat_row_style, axis=1),
-                hide_index=True, use_container_width=True
+            st.dataframe(_team_df.style.apply(_team_win_style, axis=1), hide_index=True, use_container_width=True)
+
+            # Win% bar per team
+            fig_team_win = px.bar(
+                _team_df.sort_values("Win%"),
+                x="Win%", y="Opponent", orientation="h",
+                color="Win%", color_continuous_scale="RdYlGn",
+                range_color=[0, 100],
+                title="Win% by Opponent",
+                text="Win%"
             )
+            fig_team_win.add_vline(x=50, line_dash="dash", line_color="white")
+            fig_team_win.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
+                                       font_color="white", showlegend=False,
+                                       coloraxis_showscale=False)
+            st.plotly_chart(fig_team_win, use_container_width=True)
 
             st.divider()
 
-            # Top scorers bar chart
-            st.markdown("### Top 10 Opponent Scorers")
-            top10 = filtered.head(10)
-            if not top10.empty:
-                fig_opp = px.bar(
-                    top10, x="name", y="avg_pts",
-                    color="threat_level",
-                    color_discrete_map={
-                        "🔴 Elite": "#C62828", "🟠 High": "#EF6C00",
-                        "🟡 Moderate": "#F9A825", "🟢 Low": "#2E7D32"
-                    },
-                    title="Top Opponent Scorers (Avg PPG)",
-                    labels={"name": "Player", "avg_pts": "Avg PPG"},
-                    text="avg_pts"
-                )
-                fig_opp.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
-                st.plotly_chart(fig_opp, use_container_width=True)
+            # ── SECTION 3: Where They Hurt Us — Position Damage Map ──────
+            st.markdown("### 🎯 Where Opponents Hurt Us Most")
+            st.caption("Average stats scored against us by opponent position. Red = major damage.")
 
-            # USA win rate when facing each player
-            st.markdown("### USA Win% When Facing These Players")
-            fig_win = px.bar(
-                filtered.sort_values("usa_win_pct", ascending=False).head(15),
-                x="name", y="usa_win_pct",
-                color="threat_level",
-                color_discrete_map={
-                    "🔴 Elite": "#C62828", "🟠 High": "#EF6C00",
-                    "🟡 Moderate": "#F9A825", "🟢 Low": "#2E7D32"
-                },
-                title="USA Win% vs Each Opponent Player",
-                labels={"name": "Player", "usa_win_pct": "USA Win%"},
-            )
-            fig_win.add_hline(y=50, line_dash="dash", line_color="white", annotation_text="50% mark")
-            fig_win.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
-            st.plotly_chart(fig_win, use_container_width=True)
+            _pos_order = ["PG", "SG", "SF", "PF", "C"]
+            _pos_stats = ["avg_pts", "avg_ast", "avg_reb", "avg_stl", "avg_blk"]
+            _pos_labels = ["Avg PTS", "Avg AST", "Avg REB", "Avg STL", "Avg BLK"]
+
+            _pos_df = opp_intel[opp_intel["pos"].isin(_pos_order)].groupby("pos")[_pos_stats].mean().round(1).reindex(_pos_order).dropna()
+
+            if not _pos_df.empty:
+                _pc1, _pc2 = st.columns(2)
+                with _pc1:
+                    # Heatmap
+                    fig_heat = go.Figure(go.Heatmap(
+                        z=_pos_df.values,
+                        x=_pos_labels,
+                        y=_pos_df.index.tolist(),
+                        colorscale="Reds",
+                        text=_pos_df.values,
+                        texttemplate="%{text:.1f}",
+                        showscale=False,
+                        hovertemplate="Position: %{y}<br>%{x}: %{z:.1f}<extra></extra>"
+                    ))
+                    fig_heat.update_layout(
+                        title="Opponent Damage by Position",
+                        plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white",
+                        height=300
+                    )
+                    st.plotly_chart(fig_heat, use_container_width=True)
+
+                with _pc2:
+                    # Which position scores most on us
+                    _pos_pts = _pos_df["avg_pts"].sort_values(ascending=False)
+                    fig_pos_pts = px.bar(
+                        x=_pos_pts.index, y=_pos_pts.values,
+                        color=_pos_pts.values, color_continuous_scale="Reds",
+                        labels={"x": "Position", "y": "Avg PTS Against Us"},
+                        title="Avg Points Scored Against Us by Position",
+                        text=[f"{v:.1f}" for v in _pos_pts.values]
+                    )
+                    fig_pos_pts.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
+                                              font_color="white", showlegend=False,
+                                              coloraxis_showscale=False)
+                    st.plotly_chart(fig_pos_pts, use_container_width=True)
+
+            st.divider()
+
+            # ── SECTION 4: Win vs Loss — How Opponents Differ ────────────
+            st.markdown("### 📉 How Opponents Play Different in Our Wins vs Losses")
+            st.caption("When we lose, what are opponents doing more of?")
+
+            _wl_opp_rows = []
+            for g in games:
+                won = g["score"]["us"] > g["score"]["them"]
+                for p in g.get("opponent_players", []):
+                    _wl_opp_rows.append({
+                        "result": "Win" if won else "Loss",
+                        "pts": p.get("pts", 0), "ast": p.get("ast", 0),
+                        "reb": p.get("reb", 0), "to":  p.get("to",  0),
+                        "fgm": p.get("fgm", 0), "fga": p.get("fga", 0),
+                        "tpm": p.get("tpm", 0), "tpa": p.get("tpa", 0),
+                    })
+
+            if _wl_opp_rows:
+                _wl_df = pd.DataFrame(_wl_opp_rows)
+                _wl_avg = _wl_df.groupby("result")[["pts","ast","reb","to"]].mean().round(1).reset_index()
+                _wl_melt = _wl_avg.melt(id_vars="result", var_name="Stat", value_name="Avg")
+
+                fig_wl = px.bar(
+                    _wl_melt, x="Stat", y="Avg", color="result", barmode="group",
+                    color_discrete_map={"Win": "#43A047", "Loss": "#E53935"},
+                    title="Opponent Avg Stats: Our Wins vs Our Losses",
+                    text_auto=".1f"
+                )
+                fig_wl.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
+                st.plotly_chart(fig_wl, use_container_width=True)
+
+                # 3PT attempts in wins vs losses
+                _tpa_win  = round(_wl_df[_wl_df["result"]=="Win"]["tpa"].mean(), 1)
+                _tpa_loss = round(_wl_df[_wl_df["result"]=="Loss"]["tpa"].mean(), 1)
+                _fg_win   = round((_wl_df[_wl_df["result"]=="Win"]["fgm"].sum() /
+                                   _wl_df[_wl_df["result"]=="Win"]["fga"].sum() * 100) if
+                                   _wl_df[_wl_df["result"]=="Win"]["fga"].sum() > 0 else 0, 1)
+                _fg_loss  = round((_wl_df[_wl_df["result"]=="Loss"]["fgm"].sum() /
+                                   _wl_df[_wl_df["result"]=="Loss"]["fga"].sum() * 100) if
+                                   _wl_df[_wl_df["result"]=="Loss"]["fga"].sum() > 0 else 0, 1)
+
+                _wi1, _wi2, _wi3, _wi4 = st.columns(4)
+                _wi1.metric("Opp 3PA in Our Wins",   f"{_tpa_win}")
+                _wi2.metric("Opp 3PA in Our Losses", f"{_tpa_loss}", delta=f"{round(_tpa_loss-_tpa_win,1):+.1f}", delta_color="inverse")
+                _wi3.metric("Opp FG% in Our Wins",   f"{_fg_win}%")
+                _wi4.metric("Opp FG% in Our Losses", f"{_fg_loss}%", delta=f"{round(_fg_loss-_fg_win,1):+.1f}%", delta_color="inverse")
+
+            st.divider()
+
+            # ── SECTION 5: Kryptonite Players — Can't Stop Them ──────────
+            st.markdown("### 🚨 Kryptonite Players")
+            st.caption("Players you've faced 2+ times with 0% or very low win rate — these are your problem matchups.")
+
+            _krypto_all = opp_intel[opp_intel["games"] >= 2].sort_values(["usa_win_pct","threat_score"], ascending=[True, False]).head(10)
+            if not _krypto_all.empty:
+                _kr_disp = _krypto_all[["name","pos","teams","games","avg_pts","avg_ast","avg_reb","ts_pct","usa_win_pct","threat_level"]].copy()
+                _kr_disp.columns = ["Player","Pos","Team","GP","PPG","APG","RPG","TS%","USA Win%","Threat"]
+
+                def _kr_style(row):
+                    wp = row.get("USA Win%", 50)
+                    if wp == 0:    return ["background-color: #3b0000"] * len(row)
+                    if wp <= 25:   return ["background-color: #2b1000"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(_kr_disp.style.apply(_kr_style, axis=1), hide_index=True, use_container_width=True)
+
+                fig_kr = px.scatter(
+                    _krypto_all, x="avg_pts", y="usa_win_pct",
+                    size="games", color="threat_level",
+                    color_discrete_map=_THREAT_COLORS,
+                    text="name",
+                    labels={"avg_pts": "Avg PPG Against Us", "usa_win_pct": "USA Win% When Facing"},
+                    title="Kryptonite Map — High PPG + Low Win% = Problem",
+                    size_max=30
+                )
+                fig_kr.add_hline(y=50, line_dash="dash", line_color="white", annotation_text="50% win")
+                fig_kr.update_traces(textposition="top center")
+                fig_kr.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
+                st.plotly_chart(fig_kr, use_container_width=True)
+
+            st.divider()
+
+            # ── SECTION 6: Full Player Database (collapsible) ────────────
+            with st.expander("📋 Full Opponent Player Database", expanded=False):
+                all_opp_teams = sorted(set(opp_intel["teams"].str.split(", ").explode()))
+                filter_team = st.selectbox("Filter by team:", ["All"] + all_opp_teams, key="opp_intel_team_filter")
+                filter_pos  = st.selectbox("Filter by position:", ["All","PG","SG","SF","PF","C"], key="opp_intel_pos_filter")
+                filtered = opp_intel.copy()
+                if filter_team != "All":
+                    filtered = filtered[filtered["teams"].str.contains(filter_team, na=False)]
+                if filter_pos != "All":
+                    filtered = filtered[filtered["pos"] == filter_pos]
+
+                display_cols = ["name","pos","teams","games","avg_pts","avg_reb","avg_ast",
+                                "avg_stl","avg_blk","avg_to","fg_pct","three_pct",
+                                "ts_pct","efg_pct","usa_win_pct","threat_score","threat_level"]
+                disp = filtered[[c for c in display_cols if c in filtered.columns]].copy()
+                disp.columns = [c.replace("_"," ").title() for c in disp.columns]
+
+                def _threat_row_style(row):
+                    lv = row.get("Threat Level", "")
+                    if "Elite"    in str(lv): return ["background-color: #3b0000"] * len(row)
+                    if "High"     in str(lv): return ["background-color: #3b1a00"] * len(row)
+                    if "Moderate" in str(lv): return ["background-color: #2a2a00"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(disp.style.apply(_threat_row_style, axis=1),
+                             hide_index=True, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════

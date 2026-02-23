@@ -29,7 +29,6 @@ _write_tracker.py
 _check_record.py
 dashboard_head.py
 dashboard_wip.py
-pending.py
 add_opponent_confidence.py
 auto_extract.py
 build_review_tab.py
