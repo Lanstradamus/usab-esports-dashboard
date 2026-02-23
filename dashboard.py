@@ -1276,24 +1276,31 @@ with tab_lineup:
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
 
-            # Stacked bar: who provides what — sorted by value so biggest contributor is on bottom
+            # Stacked bar: one trace per player, sorted per-stat so biggest is always on bottom
             st.markdown("### 🏗️ Lineup Contribution Breakdown")
-            contr_rows = []
-            for _, row in lineup_df.iterrows():
-                for stat in ["pts","reb","ast","stl","blk"]:
-                    contr_rows.append({"Player": row["name"], "Stat": stat.upper(),
-                                       "Value": float(row[stat]) if pd.notna(row[stat]) else 0})
-            contr_df = pd.DataFrame(contr_rows)
-            # Sort players by total contribution (sum across all stats) so biggest is always bottom
-            player_totals = contr_df.groupby("Player")["Value"].sum().sort_values(ascending=False)
-            player_order  = player_totals.index.tolist()
-            fig_contr = px.bar(
-                contr_df,
-                x="Stat", y="Value", color="Player", barmode="stack",
+            stat_cols   = ["pts","reb","ast","stl","blk"]
+            stat_labels = ["PTS","REB","AST","STL","BLK"]
+            bar_colors  = ["#1E88E5","#FB8C00","#E53935","#43A047","#FFD700","#AB47BC","#26C6DA"]
+            fig_contr   = go.Figure()
+            # For each stat, sort players by that stat descending so the biggest chunk is at the bottom
+            # We do this by adding one go.Bar trace per player, but ordering the x-categories per stat
+            # Simpler: build one horizontal grouped set per stat sorted independently
+            # Best approach: one trace per player sorted by PTS (primary stat)
+            pts_order = lineup_df.sort_values("pts", ascending=True)["name"].tolist()
+            for ci, name in enumerate(pts_order):
+                row = lineup_df[lineup_df["name"] == name].iloc[0]
+                vals = [float(row[s]) if pd.notna(row[s]) else 0 for s in stat_cols]
+                fig_contr.add_trace(go.Bar(
+                    name=name, x=stat_labels, y=vals,
+                    marker_color=bar_colors[ci % len(bar_colors)],
+                    hovertemplate="%{x}: %{y:.1f}<extra>" + name + "</extra>"
+                ))
+            fig_contr.update_layout(
+                barmode="stack",
                 title="Who Contributes What in This Lineup",
-                category_orders={"Player": player_order}
+                plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white",
+                legend=dict(traceorder="reversed")  # highest scorer shows on top of legend
             )
-            fig_contr.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="white")
             st.plotly_chart(fig_contr, use_container_width=True)
 
             # Synergy rating breakdown
