@@ -24,13 +24,19 @@ st.set_page_config(
 )
 
 # ── Authentication ──────────────────────────────────────────
-import json as _json
-_creds_raw = st.secrets.get("credentials", {})
-_creds = _json.loads(_json.dumps(dict(_creds_raw)))  # deep convert to plain dict
+def _to_dict(obj):
+    """Recursively convert AttrDict/Secrets objects to plain dicts."""
+    if hasattr(obj, "to_dict"):
+        return _to_dict(obj.to_dict())
+    if hasattr(obj, "items"):
+        return {k: _to_dict(v) for k, v in obj.items()}
+    return obj
+
+_creds = _to_dict(st.secrets.get("credentials", {}))
 authenticator = stauth.Authenticate(
     credentials=_creds,
     cookie_name="usab_esports",
-    cookie_key=st.secrets.get("cookie_key", "changeme"),
+    cookie_key=str(st.secrets.get("cookie_key", "changeme")),
     cookie_expiry_days=7,
 )
 authenticator.login()
