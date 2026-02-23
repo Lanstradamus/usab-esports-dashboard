@@ -16,6 +16,9 @@ from data import (load_games, save_games, get_player_totals, get_player_averages
                   get_best_lineup_combos, get_ai_coach_insights,
                   get_usage_and_pie, get_defensive_impact)
 from pending import load_pending, approve_game, reject_game
+from scout_data import (load_scouting, save_scouting,
+                        approve_scout_game, reject_scout_game,
+                        get_scout_player_profiles, get_scout_team_tendencies)
 
 st.set_page_config(
     page_title="USAB Esports Dashboard",
@@ -113,9 +116,15 @@ def build_stat_rows(players, grade_key="grade"):
     return rows
 
 # ── Tabs (Review Queue is always first) ───────────────────
+# Load scouting data for tab badge
+_scout_data    = load_scouting()
+_scout_pending = _scout_data.get("pending", [])
+_scout_games   = _scout_data.get("games", [])
+_scout_team    = _scout_data.get("scout_team", "Opponent")
+
 tab_review, tab_games, tab_players, tab_compare, tab_advanced, tab_scouting, \
 tab_lineup, tab_teams, tab_analytics, tab_ai, tab_opp_intel, tab_clutch, \
-tab_trends, tab_pix = st.tabs([
+tab_trends, tab_pix, tab_scout = st.tabs([
     f"📥 Review Queue ({len(pending_games)})",
     "📋 Games",
     "👤 Players",
@@ -130,6 +139,7 @@ tab_trends, tab_pix = st.tabs([
     "⚡ Clutch",
     "📈 Trends",
     "🏆 Perf Index",
+    f"🔬 Scout ({_scout_team})",
 ])
 
 # ══════════════════════════════════════════════════════════
@@ -2398,4 +2408,348 @@ with tab_pix:
             else:
                 st.info("Need multiple games to evaluate lineup combinations.")
 
+
+# ══════════════════════════════════════════════════════════
+# TAB 15: SCOUT — Opponent Scouting Dossier
+# ══════════════════════════════════════════════════════════
+with tab_scout:
+    # Reload fresh on each render
+    _sd        = load_scouting()
+    _sc_team   = _sd.get("scout_team", "Opponent")
+    _sc_games  = _sd.get("games", [])
+    _sc_pend   = _sd.get("pending", [])
+
+    st.subheader(f"🔬 Scouting Dossier — {_sc_team}")
+    st.caption("Separate from your team data. Upload their games vs other teams to build a full picture.")
+
+    # ── Change scout team name ──────────────────────────────
+    with st.expander("⚙️ Settings — Change Scout Team", expanded=False):
+        new_team_name = st.text_input("Team being scouted:", value=_sc_team, key="scout_team_name_input")
+        if st.button("Update Team Name", key="scout_update_team"):
+            _sd["scout_team"] = new_team_name
+            save_scouting(_sd)
+            st.success(f"Now scouting: {new_team_name}")
+            st.rerun()
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════
+    # SECTION 1: OUR GAMES vs THEM (from existing data)
+    # ══════════════════════════════════════════════════════
+    st.markdown(f"### 📊 Our Games vs {_sc_team}")
+    st.caption("Pulled directly from your approved games — no extra work needed.")
+
+    # Find games vs the scout team in our data
+    _our_vs_them = [g for g in _all_games if g.get("opponent","").lower() == _sc_team.lower()]
+
+    if not _our_vs_them:
+        st.info(f"No approved games vs {_sc_team} found. Check the team name matches exactly.")
+    else:
+        _ov_wins   = sum(1 for g in _our_vs_them if g["score"]["us"] > g["score"]["them"])
+        _ov_losses = len(_our_vs_them) - _ov_wins
+        _ov_avg_us   = round(sum(g["score"]["us"]   for g in _our_vs_them) / len(_our_vs_them), 1)
+        _ov_avg_them = round(sum(g["score"]["them"] for g in _our_vs_them) / len(_our_vs_them), 1)
+
+        _ov1, _ov2, _ov3, _ov4 = st.columns(4)
+        _ov1.metric("Our Record vs Them",  f"{_ov_wins}W – {_ov_losses}L")
+        _ov2.metric("Our Avg Score",        _ov_avg_us,
+                    delta=f"{round(_ov_avg_us - _ov_avg_them, 1):+.1f} margin")
+        _ov3.metric("Their Avg Score",      _ov_avg_them)
+        _ov4.metric("Games Played",         len(_our_vs_them))
+
+        # Our player stats in those games
+        st.markdown("#### Our Players in These Games")
+        _our_p_rows = []
+        _our_p_acc: dict = {}
+        for g in _our_vs_them:
+            for p in g["players"]:
+                nm = normalize_name(p["name"])
+                if nm not in _our_p_acc:
+                    _our_p_acc[nm] = {"pos": p.get("pos",""), "gp": 0,
+                                       "pts":0,"reb":0,"ast":0,"stl":0,"blk":0,
+                                       "to":0,"fgm":0,"fga":0,"tpm":0,"tpa":0,"ftm":0,"fta":0}
+                d = _our_p_acc[nm]
+                d["gp"] += 1
+                for s in ["pts","reb","ast","stl","blk","to","fgm","fga","tpm","tpa","ftm","fta"]:
+                    d[s] += p.get(s, 0)
+        for nm, d in _our_p_acc.items():
+            n = d["gp"]
+            fga = d["fga"]; fgm = d["fgm"]; tpa = d["tpa"]; tpm = d["tpm"]
+            fta = d["fta"]; pts = d["pts"]
+            ts_d = 2 * (fga + 0.44 * fta)
+            _our_p_rows.append({
+                "Player": nm, "Pos": d["pos"], "GP": n,
+                "PPG": round(pts/n,1), "RPG": round(d["reb"]/n,1), "APG": round(d["ast"]/n,1),
+                "SPG": round(d["stl"]/n,1), "BPG": round(d["blk"]/n,1), "TO/G": round(d["to"]/n,1),
+                "FG%": f"{fgm/fga*100:.1f}%" if fga>0 else "N/A",
+                "3P%": f"{tpm/tpa*100:.1f}%" if tpa>0 else "N/A",
+                "TS%": f"{pts/ts_d*100:.1f}%" if ts_d>0 else "N/A",
+            })
+        _our_p_df = pd.DataFrame(_our_p_rows).sort_values("PPG", ascending=False)
+        st.dataframe(_our_p_df, hide_index=True, use_container_width=True)
+
+        # Their players in our games
+        st.markdown(f"#### Their Players in Our Games (from your box scores)")
+        _their_p_acc: dict = {}
+        for g in _our_vs_them:
+            for p in g.get("opponent_players", []):
+                nm = p.get("name", "Unknown")
+                if nm not in _their_p_acc:
+                    _their_p_acc[nm] = {"pos": p.get("pos",""), "gp": 0,
+                                         "pts":0,"reb":0,"ast":0,"stl":0,"blk":0,
+                                         "to":0,"fgm":0,"fga":0,"tpm":0,"tpa":0,"ftm":0,"fta":0}
+                d = _their_p_acc[nm]
+                d["gp"] += 1
+                for s in ["pts","reb","ast","stl","blk","to","fgm","fga","tpm","tpa","ftm","fta"]:
+                    d[s] += p.get(s, 0)
+        _their_p_rows = []
+        for nm, d in _their_p_acc.items():
+            n = d["gp"]
+            fga = d["fga"]; fgm = d["fgm"]; tpa = d["tpa"]; tpm = d["tpm"]
+            fta = d["fta"]; pts = d["pts"]
+            ts_d = 2 * (fga + 0.44 * fta)
+            _their_p_rows.append({
+                "Player": nm, "Pos": d["pos"], "GP": n,
+                "PPG": round(pts/n,1), "RPG": round(d["reb"]/n,1), "APG": round(d["ast"]/n,1),
+                "SPG": round(d["stl"]/n,1), "BPG": round(d["blk"]/n,1), "TO/G": round(d["to"]/n,1),
+                "FG%": f"{fgm/fga*100:.1f}%" if fga>0 else "N/A",
+                "3P%": f"{tpm/tpa*100:.1f}%" if tpa>0 else "N/A",
+                "TS%": f"{pts/ts_d*100:.1f}%" if ts_d>0 else "N/A",
+            })
+
+        _THREAT_C = {"🔴 Elite":"#3b0000","🟠 High":"#3b1a00","🟡 Moderate":"#2a2a00","🟢 Low":""}
+        if _their_p_rows:
+            _their_p_df = pd.DataFrame(_their_p_rows).sort_values("PPG", ascending=False)
+            st.dataframe(_their_p_df, hide_index=True, use_container_width=True)
+
+        # Game-by-game log
+        st.markdown("#### Game Log vs Them")
+        _glog_rows = []
+        for g in sorted(_our_vs_them, key=lambda x: x["date"]):
+            won = g["score"]["us"] > g["score"]["them"]
+            _glog_rows.append({
+                "Date": g["date"], "Result": "W" if won else "L",
+                "Our Score": g["score"]["us"], "Their Score": g["score"]["them"],
+                "Margin": g["score"]["us"] - g["score"]["them"],
+            })
+        st.dataframe(pd.DataFrame(_glog_rows), hide_index=True, use_container_width=True)
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════
+    # SECTION 2: SCOUT GAME PENDING QUEUE
+    # ══════════════════════════════════════════════════════
+    st.markdown("### 📥 Scout Game Queue")
+    st.caption("Games I've extracted from screenshots you've shared. Approve to add to the scouting dossier.")
+
+    if not _sc_pend:
+        st.info("No pending scouting games. Share a screenshot of their game vs another team and I'll extract the stats.")
+    else:
+        for sg in _sc_pend:
+            with st.expander(f"🔍 {sg.get('scout_team','?')} vs {sg.get('opponent','?')}  —  {sg.get('date','?')}  |  Score: {sg.get('scout_score','?')} – {sg.get('opp_score','?')}", expanded=True):
+                st.markdown(f"**Scout Team:** {sg.get('scout_team','?')}  |  **vs:** {sg.get('opponent','?')}  |  **Result:** {'W' if sg.get('scout_team_won') else 'L'}")
+                _sp_disp = pd.DataFrame(sg.get("players", []))
+                if not _sp_disp.empty:
+                    disp_cols = [c for c in ["name","pos","pts","reb","ast","stl","blk","to","fgm","fga","tpm","tpa"] if c in _sp_disp.columns]
+                    st.dataframe(_sp_disp[disp_cols], hide_index=True, use_container_width=True)
+                _sc1, _sc2 = st.columns(2)
+                if _sc1.button(f"✅ Approve", key=f"sc_approve_{sg['id']}"):
+                    approve_scout_game(sg["id"])
+                    st.success("Approved!")
+                    st.rerun()
+                if _sc2.button(f"❌ Reject", key=f"sc_reject_{sg['id']}"):
+                    reject_scout_game(sg["id"])
+                    st.warning("Rejected.")
+                    st.rerun()
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════
+    # SECTION 3: FULL SCOUTING DOSSIER (approved games)
+    # ══════════════════════════════════════════════════════
+    st.markdown(f"### 🗂️ {_sc_team} — Full Scouting Dossier")
+    st.caption("Built from all approved scouting games. The more games you add, the more accurate this gets.")
+
+    if not _sc_games:
+        st.info(f"No approved scouting games yet for {_sc_team}. Share screenshots of their games vs other teams and I'll extract the stats.")
+    else:
+        _tend = get_scout_team_tendencies(_sc_games)
+        _prof = get_scout_player_profiles(_sc_games)
+
+        # Team tendency KPIs
+        st.markdown("#### Team Tendencies")
+        _t1, _t2, _t3, _t4, _t5, _t6, _t7 = st.columns(7)
+        _t1.metric("Scouted Games",   _tend.get("games","?"))
+        _t2.metric("Their Record",    _tend.get("record","?"))
+        _t3.metric("Avg Pts For",     _tend.get("avg_pts_for","?"))
+        _t4.metric("Avg Poss/G",      _tend.get("avg_poss","?"), help="FGA + 0.44×FTA + TO")
+        _t5.metric("Off Rtg",         _tend.get("off_rtg","?"),  help="Pts per 100 possessions")
+        _t6.metric("3PT Rate",        f"{_tend.get('three_rate','?')}%" if _tend.get('three_rate') else "N/A",
+                   help="% of shots that are 3s")
+        _t7.metric("AST/TO",          _tend.get("ast_to","?"))
+
+        # Tendencies bar
+        _tb1, _tb2, _tb3 = st.columns(3)
+        _tb1.metric("FG%",     f"{_tend.get('fg_pct','?')}%"    if _tend.get('fg_pct')    else "N/A")
+        _tb2.metric("3P%",     f"{_tend.get('three_pct','?')}%" if _tend.get('three_pct') else "N/A")
+        _tb3.metric("TS%",     f"{_tend.get('ts_pct','?')}%"    if _tend.get('ts_pct')    else "N/A")
+
+        st.divider()
+
+        # Player profiles
+        if not _prof.empty:
+            st.markdown("#### Player Profiles — Threat Map")
+
+            _THREAT_COLORS_SCOUT = {
+                "🔴 Elite": "#C62828", "🟠 High": "#EF6C00",
+                "🟡 Moderate": "#F9A825", "🟢 Low": "#2E7D32"
+            }
+
+            # Scatter: PPG vs TS%
+            fig_scout_scatter = px.scatter(
+                _prof.dropna(subset=["ppg","ts_pct"]),
+                x="ppg", y="ts_pct",
+                color="threat", size="games",
+                color_discrete_map=_THREAT_COLORS_SCOUT,
+                text="name",
+                labels={"ppg":"PPG","ts_pct":"TS%"},
+                title=f"{_sc_team} — Player Threat Map (PPG vs TS%)",
+                size_max=25
+            )
+            fig_scout_scatter.update_traces(textposition="top center")
+            fig_scout_scatter.update_layout(plot_bgcolor="#0e1117", paper_bgcolor="#0e1117",
+                                             font_color="white")
+            st.plotly_chart(fig_scout_scatter, use_container_width=True)
+
+            # Full player table
+            st.markdown("#### Full Player Stats Table")
+            _prof_disp = _prof[["name","pos","games","ppg","rpg","apg","spg","bpg","topg",
+                                  "fg_pct","three_pct","three_rate","ts_pct","ast_to","off_rtg","avg_gs","threat"]].copy()
+            _prof_disp.columns = ["Player","Pos","GP","PPG","RPG","APG","SPG","BPG","TO/G",
+                                   "FG%","3P%","3PT Rate","TS%","AST/TO","Off Rtg","Game Score","Threat"]
+
+            def _scout_threat_style(row):
+                t = str(row.get("Threat",""))
+                if "Elite"    in t: return ["background-color: #3b0000"] * len(row)
+                if "High"     in t: return ["background-color: #3b1a00"] * len(row)
+                if "Moderate" in t: return ["background-color: #2a2a00"] * len(row)
+                return [""] * len(row)
+
+            st.dataframe(
+                _prof_disp.style.apply(_scout_threat_style, axis=1),
+                hide_index=True, use_container_width=True,
+                column_config={
+                    "GP":       st.column_config.NumberColumn("GP",       format="%d"),
+                    "PPG":      st.column_config.NumberColumn("PPG",      format="%.1f"),
+                    "RPG":      st.column_config.NumberColumn("RPG",      format="%.1f"),
+                    "APG":      st.column_config.NumberColumn("APG",      format="%.1f"),
+                    "SPG":      st.column_config.NumberColumn("SPG",      format="%.1f"),
+                    "BPG":      st.column_config.NumberColumn("BPG",      format="%.1f"),
+                    "TO/G":     st.column_config.NumberColumn("TO/G",     format="%.1f"),
+                    "FG%":      st.column_config.NumberColumn("FG%",      format="%.1f%%"),
+                    "3P%":      st.column_config.NumberColumn("3P%",      format="%.1f%%"),
+                    "3PT Rate": st.column_config.NumberColumn("3PT Rate", format="%.1f%%"),
+                    "TS%":      st.column_config.NumberColumn("TS%",      format="%.1f%%"),
+                    "AST/TO":   st.column_config.NumberColumn("AST/TO",   format="%.2f"),
+                    "Off Rtg":  st.column_config.NumberColumn("Off Rtg",  format="%.1f"),
+                    "Game Score":st.column_config.NumberColumn("Game Score",format="%.1f"),
+                }
+            )
+
+            # Strengths & Weaknesses callout
+            st.divider()
+            st.markdown("#### Strengths & Weaknesses")
+            _sw1, _sw2 = st.columns(2)
+            with _sw1:
+                st.markdown("**🔴 Threats / Strengths**")
+                _top3 = _prof.head(3)
+                for _, pr in _top3.iterrows():
+                    st.markdown(f"- **{pr['name']}** ({pr['pos']}) — {pr['ppg']} PPG | {pr['ts_pct'] or 'N/A'}% TS | {pr['threat']}")
+                _best_3pt = _prof.dropna(subset=["three_pct"]).sort_values("three_pct", ascending=False).head(1)
+                if not _best_3pt.empty:
+                    r = _best_3pt.iloc[0]
+                    st.markdown(f"- **Best 3PT shooter:** {r['name']} — {r['three_pct']}% on {r['three_rate']}% rate")
+            with _sw2:
+                st.markdown("**🟢 Weaknesses / Exploits**")
+                _worst_to = _prof.sort_values("topg", ascending=False).head(1)
+                if not _worst_to.empty:
+                    r = _worst_to.iloc[0]
+                    st.markdown(f"- **Ball handler:** {r['name']} — {r['topg']} TO/G (force them off ball)")
+                _worst_ts = _prof.dropna(subset=["ts_pct"]).sort_values("ts_pct").head(1)
+                if not _worst_ts.empty:
+                    r = _worst_ts.iloc[0]
+                    st.markdown(f"- **Least efficient:** {r['name']} — {r['ts_pct']}% TS (make them shoot)")
+                _lowest_ast = _prof.sort_values("apg").head(1)
+                if not _lowest_ast.empty:
+                    r = _lowest_ast.iloc[0]
+                    st.markdown(f"- **Low playmaker:** {r['name']} — {r['apg']} APG (isolate them)")
+
+            # Scouted game log
+            st.divider()
+            st.markdown("#### Scouted Game Log")
+            _sg_log = []
+            for sg in _sc_games:
+                _sg_log.append({
+                    "Date":       sg.get("date","?"),
+                    "vs":         sg.get("opponent","?"),
+                    "Result":     "W" if sg.get("scout_team_won") else "L",
+                    "Their Score": sg.get("scout_score","?"),
+                    "Opp Score":   sg.get("opp_score","?"),
+                })
+            st.dataframe(pd.DataFrame(_sg_log), hide_index=True, use_container_width=True)
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════
+    # SECTION 4: MATCHUP PREVIEW
+    # ══════════════════════════════════════════════════════
+    st.markdown(f"### ⚔️ Matchup Preview — Us vs {_sc_team}")
+    st.caption(f"Your stats IN games vs {_sc_team} vs their combined stats from all scouted sources.")
+
+    _has_our_games  = len(_our_vs_them) > 0 if '_our_vs_them' in dir() else False
+    _has_scout_data = len(_sc_games) > 0
+
+    if not _has_our_games and not _has_scout_data:
+        st.info("No data available yet for matchup preview.")
+    else:
+        # Build our avg stats from vs-them games
+        _mv_rows = []
+        if _has_our_games:
+            _us_g = _our_vs_them
+            _us_n = len(_us_g)
+            _us_stats = {s: round(sum(p.get(s,0) for g in _us_g for p in g["players"]) / _us_n, 1)
+                         for s in ["pts","reb","ast","stl","blk","to","fgm","fga","tpm","tpa"]}
+            _us_fga = sum(p.get("fga",0) for g in _us_g for p in g["players"])
+            _us_fta = sum(p.get("fta",0) for g in _us_g for p in g["players"])
+            _us_pts = sum(p.get("pts",0) for g in _us_g for p in g["players"])
+            _us_ts = round(_us_pts / (2*(_us_fga + 0.44*_us_fta)) * 100, 1) if _us_fga > 0 else None
+
+        if _has_scout_data:
+            _tend2 = get_scout_team_tendencies(_sc_games)
+
+        # Side-by-side KPI comparison
+        _mp_cols = st.columns(2)
+        with _mp_cols[0]:
+            st.markdown(f"#### 🔵 USA (in {_sc_team} games)")
+            if _has_our_games:
+                st.metric("Avg Team PTS",    round(sum(g["score"]["us"]   for g in _us_g)/_us_n, 1))
+                st.metric("Avg Team REB",    _us_stats["reb"])
+                st.metric("Avg Team AST",    _us_stats["ast"])
+                st.metric("Avg Team TO",     _us_stats["to"])
+                st.metric("Team TS%",        f"{_us_ts}%" if _us_ts else "N/A")
+                st.metric("3PA/G",           _us_stats["tpa"])
+            else:
+                st.info("No games vs this team yet.")
+
+        with _mp_cols[1]:
+            st.markdown(f"#### 🔴 {_sc_team} (scouted games)")
+            if _has_scout_data:
+                st.metric("Avg Team PTS",    _tend2.get("avg_pts_for","N/A"))
+                st.metric("Avg Team REB",    _tend2.get("avg_reb","N/A"))
+                st.metric("Avg Team AST",    _tend2.get("avg_ast","N/A"))
+                st.metric("Avg Team TO",     _tend2.get("avg_to","N/A"))
+                st.metric("Team TS%",        f"{_tend2.get('ts_pct','?')}%" if _tend2.get('ts_pct') else "N/A")
+                st.metric("Off Rtg",         _tend2.get("off_rtg","N/A"))
+            else:
+                st.info("Add scouting games to see their side of the matchup preview.")
 
