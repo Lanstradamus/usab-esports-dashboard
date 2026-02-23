@@ -1796,7 +1796,20 @@ with tab_opp_intel:
                 if wp <= 30:  return ["background-color: #2b0d0d"] * len(row)
                 return [""] * len(row)
 
-            st.dataframe(_team_df.style.apply(_team_win_style, axis=1), hide_index=True, use_container_width=True)
+            st.dataframe(
+                _team_df.style.apply(_team_win_style, axis=1),
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "GP":              st.column_config.NumberColumn("GP",              format="%d"),
+                    "W":               st.column_config.NumberColumn("W",               format="%d"),
+                    "L":               st.column_config.NumberColumn("L",               format="%d"),
+                    "Win%":            st.column_config.NumberColumn("Win%",            format="%.1f%%"),
+                    "Avg Pts For":     st.column_config.NumberColumn("Avg Pts For",     format="%.1f"),
+                    "Avg Pts Against": st.column_config.NumberColumn("Avg Pts Against", format="%.1f"),
+                    "Margin":          st.column_config.NumberColumn("Margin",          format="%.1f"),
+                }
+            )
 
             # Win% bar per team
             fig_team_win = px.bar(
