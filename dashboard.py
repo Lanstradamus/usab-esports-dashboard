@@ -1240,25 +1240,39 @@ with tab_lineup:
             contrib_disp.columns = ["Player","PTS","REB","AST","STL","BLK","TO","GS","TS%","AST/TO"]
             st.dataframe(contrib_disp, hide_index=True, use_container_width=True)
 
-            # Radar chart
+            # Radar chart — normalized so all stats are on same 0-10 scale
             st.markdown("### 🕸️ Player Radar Comparison")
-            radar_stats = ["pts","reb","ast","stl","blk"]
-            radar_data  = lineup_df[["name"] + radar_stats].copy()
+            st.caption("Each stat normalized 0–10 within this lineup. Bigger = better relative to teammates.")
+            radar_stats  = ["pts","reb","ast","stl","blk"]
+            radar_labels = ["Scoring","Rebounding","Playmaking","Steals","Blocks"]
+            radar_data   = lineup_df[["name"] + radar_stats].copy()
             if not radar_data.empty:
+                # Normalize each stat to 0-10 within the selected lineup
+                radar_norm = radar_data[radar_stats].copy()
+                for col in radar_stats:
+                    mn, mx = radar_norm[col].min(), radar_norm[col].max()
+                    radar_norm[col] = (radar_norm[col] - mn) / (mx - mn) * 10 if mx != mn else 5.0
                 fig_radar = go.Figure()
-                radar_colors = ["#FFD700","#1E88E5","#E53935","#43A047","#FB8C00"]
+                radar_colors = ["#FFD700","#1E88E5","#E53935","#43A047","#FB8C00","#AB47BC","#26C6DA"]
                 for ci, (_, row) in enumerate(radar_data.iterrows()):
-                    vals = [float(row[s]) if pd.notna(row[s]) else 0 for s in radar_stats]
-                    vals += [vals[0]]
+                    vals = [float(radar_norm.loc[row.name, s]) if pd.notna(radar_norm.loc[row.name, s]) else 0
+                            for s in radar_stats]
+                    raw_vals = [float(row[s]) if pd.notna(row[s]) else 0 for s in radar_stats]
+                    hover = [f"{radar_labels[i]}: {raw_vals[i]:.1f}" for i in range(len(radar_stats))]
+                    vals_closed = vals + [vals[0]]
                     fig_radar.add_trace(go.Scatterpolar(
-                        r=vals, theta=[s.upper() for s in radar_stats] + [radar_stats[0].upper()],
+                        r=vals_closed,
+                        theta=radar_labels + [radar_labels[0]],
                         fill="toself", name=row["name"],
-                        line_color=radar_colors[ci % len(radar_colors)], opacity=0.75
+                        line_color=radar_colors[ci % len(radar_colors)], opacity=0.75,
+                        hovertext=hover + [hover[0]], hoverinfo="text+name"
                     ))
                 fig_radar.update_layout(
-                    polar=dict(bgcolor="#0e1117", radialaxis=dict(visible=True)),
+                    polar=dict(bgcolor="#0e1117", radialaxis=dict(visible=True, range=[0,10],
+                               tickfont=dict(color="#888"), gridcolor="#333")),
                     paper_bgcolor="#0e1117", font_color="white",
-                    title="Lineup Player Radar (Per Game Averages)"
+                    title="Lineup Player Radar (Normalized — hover for real values)",
+                    legend=dict(bgcolor="#0e1117")
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
 
