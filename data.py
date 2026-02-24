@@ -11,6 +11,9 @@ NAME_ALIASES = {
     "MamalmDatMan_": "MamaImDatMan",
     "MamaImDatMan_": "MamaImDatMan",
     "JohnnyRed_":    "JohhnyRed_",
+    "JOEMORNING":    "JOEMORNING_",
+    "JDEMONING":     "JOEMORNING_",
+    "CEMORNING":     "JOEMORNING_",
 }
 
 def normalize_name(name: str) -> str:
@@ -223,21 +226,23 @@ def get_advanced_stats(games: list) -> pd.DataFrame:
 
 def get_win_loss_splits(games: list) -> pd.DataFrame:
     """Per-player stats split by win vs loss games, including Hollinger Game Score averages."""
-    # accumulators: (name, pos) -> {wins: {...}, losses: {...}}
+    # accumulators: name -> {wins: {...}, losses: {...}}
     buckets: dict = {}
 
     for game in games:
         usa_won = game["score"]["us"] > game["score"]["them"]
         for p in game["players"]:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in buckets:
                 buckets[key] = {
-                    "name": name, "pos": pos,
+                    "name": name, "pos_list": [],
                     "w_pts": [], "w_reb": [], "w_ast": [], "w_gs": [],
                     "l_pts": [], "l_reb": [], "l_ast": [], "l_gs": [],
                 }
+            if pos:
+                buckets[key]["pos_list"].append(pos)
 
             pts = p.get("pts", 0)
             fgm = p.get("fgm", 0)
@@ -278,7 +283,9 @@ def get_win_loss_splits(games: list) -> pd.DataFrame:
         return round(sum(lst) / len(lst), 1) if lst else None
 
     rows = []
-    for (name, pos), b in buckets.items():
+    for name, b in buckets.items():
+        pl = b["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         rows.append({
             "name":    name,
             "pos":     pos,
@@ -308,23 +315,27 @@ def get_scoring_profile(games: list) -> pd.DataFrame:
     for game in games:
         for p in game["players"]:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in totals:
                 totals[key] = {
-                    "name": name, "pos": pos, "games": 0,
+                    "name": name, "pos_list": [], "games": 0,
                     "pts": 0, "fgm": 0, "fga": 0,
                     "tpm": 0, "tpa": 0,
                     "ftm": 0, "fta": 0,
                     "stl": 0, "blk": 0, "to": 0,
                 }
+            if pos:
+                totals[key]["pos_list"].append(pos)
             t = totals[key]
             t["games"] += 1
             for stat in ["pts", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "stl", "blk", "to"]:
                 t[stat] += p.get(stat, 0)
 
     rows = []
-    for (name, pos), t in totals.items():
+    for name, t in totals.items():
+        pl = t["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         n        = t["games"]
         pts      = t["pts"]
         fgm      = t["fgm"]
@@ -374,7 +385,7 @@ def get_scoring_profile(games: list) -> pd.DataFrame:
 
 def get_scoring_shares(games: list) -> pd.DataFrame:
     """Per-player average scoring share and lead-scorer game count."""
-    accum: dict = {}  # (name, pos) -> {"games": int, "shares": list, "lead_scorer": int}
+    accum: dict = {}  # name -> {"games": int, "shares": list, "lead_scorer": int}
 
     for game in games:
         usa_players = game["players"]
@@ -384,10 +395,12 @@ def get_scoring_shares(games: list) -> pd.DataFrame:
             # Register games played but skip share computation
             for p in usa_players:
                 name = normalize_name(p["name"])
-                pos  = p.get("pos", "")
-                key  = (name, pos)
+                pos  = p.get("pos", "").strip()
+                key  = name
                 if key not in accum:
-                    accum[key] = {"name": name, "pos": pos, "games": 0, "shares": [], "lead_scorer": 0}
+                    accum[key] = {"name": name, "pos_list": [], "games": 0, "shares": [], "lead_scorer": 0}
+                if pos:
+                    accum[key]["pos_list"].append(pos)
                 accum[key]["games"] += 1
             continue
 
@@ -396,10 +409,12 @@ def get_scoring_shares(games: list) -> pd.DataFrame:
 
         for p in usa_players:
             name    = normalize_name(p["name"])
-            pos     = p.get("pos", "")
-            key     = (name, pos)
+            pos     = p.get("pos", "").strip()
+            key     = name
             if key not in accum:
-                accum[key] = {"name": name, "pos": pos, "games": 0, "shares": [], "lead_scorer": 0}
+                accum[key] = {"name": name, "pos_list": [], "games": 0, "shares": [], "lead_scorer": 0}
+            if pos:
+                accum[key]["pos_list"].append(pos)
 
             pts = p.get("pts", 0)
             accum[key]["games"] += 1
@@ -408,7 +423,9 @@ def get_scoring_shares(games: list) -> pd.DataFrame:
                 accum[key]["lead_scorer"] += 1
 
     rows = []
-    for (name, pos), a in accum.items():
+    for name, a in accum.items():
+        pl = a["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         shares = a["shares"]
         avg_share = round(sum(shares) / len(shares), 1) if shares else None
         rows.append({
@@ -521,14 +538,16 @@ def get_close_game_stats(games: list) -> pd.DataFrame:
 
         for p in game["players"]:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in buckets:
                 buckets[key] = {
-                    "name": name, "pos": pos,
+                    "name": name, "pos_list": [],
                     "close_gs":  [], "close_pts":  [],
                     "other_gs":  [], "other_pts":  [],
                 }
+            if pos:
+                buckets[key]["pos_list"].append(pos)
 
             pts = p.get("pts", 0)
             fgm = p.get("fgm", 0)
@@ -565,7 +584,9 @@ def get_close_game_stats(games: list) -> pd.DataFrame:
         return round(sum(lst) / len(lst), 1) if lst else None
 
     rows = []
-    for (name, pos), b in buckets.items():
+    for name, b in buckets.items():
+        pl = b["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         rows.append({
             "name":        name,
             "pos":         pos,
@@ -614,11 +635,13 @@ def get_usage_and_pie(games: list) -> pd.DataFrame:
 
         for p in players:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in player_acc:
-                player_acc[key] = {"name": name, "pos": pos, "games": 0,
+                player_acc[key] = {"name": name, "pos_list": [], "games": 0,
                                    "usg_list": [], "pie_list": []}
+            if pos:
+                player_acc[key]["pos_list"].append(pos)
 
             pts  = p.get("pts", 0); fgm = p.get("fgm", 0); fga = p.get("fga", 0)
             ftm  = p.get("ftm", 0); fta = p.get("fta", 0)
@@ -637,7 +660,9 @@ def get_usage_and_pie(games: list) -> pd.DataFrame:
             if pie is not None: d["pie_list"].append(pie)
 
     rows = []
-    for (name, pos), d in player_acc.items():
+    for name, d in player_acc.items():
+        pl = d["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         rows.append({
             "name":    name,
             "pos":     pos,
@@ -662,12 +687,14 @@ def get_defensive_impact(games: list) -> pd.DataFrame:
         opp_pts  = game["score"]["them"]
         for p in game["players"]:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in buckets:
-                buckets[key] = {"name": name, "pos": pos,
+                buckets[key] = {"name": name, "pos_list": [],
                                 "games": 0, "stl": 0, "blk": 0,
                                 "fls": 0, "opp_pts_list": []}
+            if pos:
+                buckets[key]["pos_list"].append(pos)
             d = buckets[key]
             d["games"]    += 1
             d["stl"]      += p.get("stl", 0)
@@ -676,7 +703,9 @@ def get_defensive_impact(games: list) -> pd.DataFrame:
             d["opp_pts_list"].append(opp_pts)
 
     rows = []
-    for (name, pos), d in buckets.items():
+    for name, d in buckets.items():
+        pl = d["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         n = d["games"]
         rows.append({
             "name":           name,
@@ -971,14 +1000,16 @@ def get_clutch_stats(games: list) -> pd.DataFrame:
         is_close = margin <= 10
         for p in game["players"]:
             name = normalize_name(p["name"])
-            pos  = p.get("pos", "")
-            key  = (name, pos)
+            pos  = p.get("pos", "").strip()
+            key  = name
             if key not in buckets:
                 buckets[key] = {
-                    "name": name, "pos": pos,
+                    "name": name, "pos_list": [],
                     "clutch_pts": [], "clutch_gs": [], "clutch_wins": 0,
                     "reg_pts":    [], "reg_gs":    [],
                 }
+            if pos:
+                buckets[key]["pos_list"].append(pos)
             gs = _calc_gs(p)
             pts = p.get("pts", 0)
             b   = buckets[key]
@@ -995,7 +1026,9 @@ def get_clutch_stats(games: list) -> pd.DataFrame:
         return round(sum(lst) / len(lst), 1) if lst else None
 
     rows = []
-    for (name, pos), b in buckets.items():
+    for name, b in buckets.items():
+        pl = b["pos_list"]
+        pos = max(set(pl), key=pl.count) if pl else ""
         cg           = len(b["clutch_pts"])
         cp           = _avg(b["clutch_pts"])
         rp           = _avg(b["reg_pts"])

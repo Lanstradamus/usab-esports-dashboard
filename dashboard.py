@@ -170,8 +170,9 @@ with tab_review:
                 with img_col:
                     screenshot_name = game["screenshot"]
                     possible_paths = [
-                        Path("C:/Users/lance/Desktop/USAB Esports/2026/analyzed") / screenshot_name,
+                        Path("C:/Users/lance/Desktop/USAB Esports/2026/Screenshots/analyzed") / screenshot_name,
                         Path("C:/Users/lance/Desktop/USAB Esports/2026/Screenshots") / screenshot_name,
+                        Path("C:/Users/lance/Desktop/USAB Esports/2026/analyzed") / screenshot_name,
                     ]
                     found_path = next((p for p in possible_paths if p.exists()), None)
                     if found_path:
@@ -530,15 +531,17 @@ with tab_compare:
         for g in games:
             for p in g["players"]:
                 nm = normalize_name(p["name"])
-                pos = p.get("pos", "")
+                pos = p.get("pos", "").strip()
+                if not pos:          # skip blank/missing positions — don't create empty () bucket
+                    continue
                 if nm not in _cmp_pos_counts:
                     _cmp_pos_counts[nm] = {}
                 _cmp_pos_counts[nm][pos] = _cmp_pos_counts[nm].get(pos, 0) + 1
 
-        # Build selectable labels: "Name" if one pos, "Name (POS)" per pos if multi
+        # Build selectable labels: "Name" if one pos, "Name (POS)" per pos if 2+ distinct named positions
         _cmp_options = []
         for nm in sorted(_cmp_pos_counts.keys()):
-            positions = _cmp_pos_counts[nm]
+            positions = {p: c for p, c in _cmp_pos_counts[nm].items() if p}  # only named positions
             if len(positions) > 1:
                 for pos in sorted(positions.keys()):
                     _cmp_options.append(f"{nm} ({pos})")
