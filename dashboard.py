@@ -26,6 +26,73 @@ st.set_page_config(
     layout="wide"
 )
 
+# ── Mobile-responsive CSS ────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* ── Tab bar: horizontally scrollable on mobile ── */
+.stTabs [data-baseweb="tab-list"] {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 2px !important;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+.stTabs [data-baseweb="tab"] {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+}
+
+/* ── Reduce main block padding on mobile ── */
+@media (max-width: 768px) {
+    .block-container {
+        padding: 0.75rem 0.5rem 2rem 0.5rem !important;
+    }
+    h1 { font-size: 1.25rem !important; }
+    h2 { font-size: 1.05rem !important; }
+    h3 { font-size: 0.95rem !important; }
+
+    /* Stack ALL columns vertically on small screens */
+    [data-testid="column"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        flex: none !important;
+    }
+
+    /* Full-width metrics on mobile */
+    [data-testid="metric-container"] {
+        width: 100% !important;
+        padding: 8px !important;
+    }
+
+    /* Prevent overflow on wide HTML card content */
+    .stMarkdown { overflow-x: hidden !important; }
+
+    /* Tighten the sidebar toggle area */
+    [data-testid="stSidebarNav"] { display: none; }
+
+    /* Charts: enforce min height so they don't collapse */
+    .js-plotly-plot .plotly { min-height: 280px !important; }
+
+    /* Make dataframes scroll horizontally instead of overflowing */
+    [data-testid="stDataFrame"] {
+        overflow-x: auto !important;
+        max-width: 100vw !important;
+    }
+
+    /* Tab text slightly smaller so more tabs fit before scrolling */
+    .stTabs [data-baseweb="tab"] p {
+        font-size: 12px !important;
+    }
+}
+
+/* ── Slightly tighter tab text on ALL screen sizes ── */
+.stTabs [data-baseweb="tab"] p {
+    font-size: 13px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Authentication ──────────────────────────────────────────
 def _to_dict(obj):
     """Recursively convert AttrDict/Secrets objects to plain dicts."""
@@ -122,10 +189,11 @@ _scout_pending = _scout_data.get("pending", [])
 _scout_games   = _scout_data.get("games", [])
 _scout_team    = _scout_data.get("scout_team", "Opponent")
 
-tab_review, tab_games, tab_players, tab_compare, tab_advanced, tab_scouting, \
-tab_lineup, tab_teams, tab_analytics, tab_ai, tab_opp_intel, tab_clutch, \
+tab_review, tab_ai, tab_games, tab_players, tab_compare, tab_advanced, tab_scouting, \
+tab_lineup, tab_teams, tab_analytics, tab_opp_intel, tab_clutch, \
 tab_trends, tab_pix, tab_scout = st.tabs([
     f"📥 Review Queue ({len(pending_games)})",
+    "🧠 AI Insights",
     "📋 Games",
     "👤 Players",
     "⚔️ Comparisons",
@@ -134,7 +202,6 @@ tab_trends, tab_pix, tab_scout = st.tabs([
     "🔧 Lineup Builder",
     "🆚 Teams Faced",
     "🔥 Team Analytics",
-    "🧠 AI Insights",
     "🕵️ Opp Intel",
     "⚡ Clutch",
     "📈 Trends",
@@ -1758,62 +1825,224 @@ with tab_ai:
     if not games:
         st.info("No approved games yet.")
     else:
-        st.subheader("🧠 AI Coach Insights")
-        st.caption("Rule-based pattern recognition across all your game data. Updated automatically as you add games.")
+        st.subheader("🧠 AI Insights — Team Quick Look")
+        st.caption("Comprehensive team snapshot. All sections update automatically as games are approved.")
 
-        insights = get_ai_coach_insights(games)
-        if not insights:
+        # ── fetch all data up front ────────────────────────────────────────────
+        _ins      = get_ai_coach_insights(games)
+        _streaks  = get_hot_cold_streaks(games)
+        _impact   = get_player_impact_index(games)
+        _adv      = get_advanced_stats(games)
+        _wl       = get_win_loss_splits(games)
+        _ts_data  = get_team_stats_by_game(games)
+        _momentum = get_momentum_analysis(games)
+
+        total_g    = len(games)
+        _wins      = sum(1 for g in games if g["score"]["us"] > g["score"]["them"])
+        _losses    = total_g - _wins
+        _win_pct   = round(_wins / total_g * 100) if total_g else 0
+        _avg_us    = round(sum(g["score"]["us"]   for g in games) / total_g, 1)
+        _avg_them  = round(sum(g["score"]["them"] for g in games) / total_g, 1)
+        _avg_marg  = round(_avg_us - _avg_them, 1)
+        _hot_list  = [n for n, d in _streaks.items() if "HOT"  in d["status"]]
+        _cold_list = [n for n, d in _streaks.items() if "COLD" in d["status"]]
+
+        # ══ SECTION 1 — TEAM COMMAND CENTER ══════════════════════════════════
+        st.markdown("### 📊 Team Command Center")
+        cc1, cc2, cc3, cc4, cc5, cc6 = st.columns(6)
+        cc1.metric("Record",        f"{_wins}W – {_losses}L",   f"{_win_pct}% Win Rate")
+        cc2.metric("Avg PTS Scored", _avg_us,  f"{_avg_marg:+.1f} margin")
+        cc3.metric("Avg PTS Allowed", _avg_them)
+        if not _ts_data.empty and len(_ts_data) > 1:
+            _fm  = int(_ts_data["margin"].iloc[0])
+            _lm  = int(_ts_data["margin"].iloc[-1])
+            _trj = "📈 Improving" if _lm > _fm else "📉 Declining"
+            cc4.metric("Trajectory", _trj, f"{_fm:+d} → {_lm:+d} pts")
+        else:
+            cc4.metric("Trajectory", "—")
+        _avg_reb = round(_ts_data["reb_margin"].mean(), 1) if not _ts_data.empty else 0
+        cc5.metric("Reb Margin", f"{_avg_reb:+.1f}", "per game")
+        cc6.metric("Comeback Wins", _momentum.get("comeback_wins", 0), "trailed after Q3")
+
+        st.divider()
+
+        # ══ SECTION 2 — PLAYER FORM BADGES ═══════════════════════════════════
+        st.markdown("### 🌡️ Player Form Right Now (Last 3 vs Season Avg)")
+        if _streaks:
+            _n = len(_streaks)
+            _fc = st.columns(_n)
+            for _i, (_nm, _d) in enumerate(_streaks.items()):
+                _dv  = _d["delta"]
+                _st  = _d["status"]
+                _clr = "#FF5722" if "HOT" in _st else ("#607D8B" if "COLD" in _st else "#1E88E5")
+                _arr = "▲" if _dv > 0 else ("▼" if _dv < 0 else "●")
+                _fc[_i].markdown(f"""
+<div style="background:{_clr}22;border:1px solid {_clr};border-radius:10px;padding:14px 10px;margin:4px;text-align:center;">
+<div style="color:{_clr};font-weight:700;font-size:13px;margin-bottom:4px">{_nm}</div>
+<div style="font-size:22px;line-height:1.2">{_st}</div>
+<div style="font-size:22px;color:{_clr};font-weight:800;margin:2px 0">{_arr} {_dv:+.1f}</div>
+<hr style="border-color:{_clr}44;margin:6px 0">
+<div style="font-size:11px;color:#ccc">Season <b>{_d['season_avg_pts']}</b> PPG</div>
+<div style="font-size:11px;color:#ccc">Recent <b>{_d['recent_avg_pts']}</b> PPG</div>
+<div style="font-size:10px;color:#777;margin-top:4px">GS avg: {_d['season_avg_gs']}</div>
+</div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # ══ SECTION 3 — IMPACT RANKINGS ══════════════════════════════════════
+        st.markdown("### 🏆 Player Impact Rankings")
+        if not _impact.empty:
+            _rank_colors  = ["#FFD700", "#C0C0C0", "#CD7F32", "#607D8B", "#455A64"]
+            _rank_labels  = ["#1", "#2", "#3", "#4", "#5"]
+            _imp_cols     = st.columns(len(_impact))
+            for _ri, (_idx, _row) in enumerate(_impact.iterrows()):
+                if _ri >= len(_imp_cols):
+                    break
+                _sc   = _row["impact_score"]
+                _rc   = _rank_colors[_ri] if _ri < len(_rank_colors) else "#607D8B"
+                _rl   = _rank_labels[_ri] if _ri < len(_rank_labels) else f"#{_ri+1}"
+                _ts_v = "—"
+                if not _adv.empty and "ts_pct" in _adv.columns:
+                    _ar = _adv[_adv["name"] == _row["name"]]
+                    if not _ar.empty and _ar.iloc[0]["ts_pct"] is not None:
+                        _ts_v = f"{_ar.iloc[0]['ts_pct']}%"
+                _imp_cols[_ri].markdown(f"""
+<div style="background:#1a1a2e;border:2px solid {_rc};border-radius:10px;padding:14px 10px;margin:4px;text-align:center;">
+<div style="color:{_rc};font-size:22px;font-weight:900">{_rl}</div>
+<div style="color:white;font-weight:700;font-size:13px;margin:4px 0">{_row['name']}</div>
+<div style="color:{_rc};font-size:30px;font-weight:900;line-height:1">{_sc}</div>
+<div style="font-size:10px;color:#777;margin-bottom:6px">Impact Score / 100</div>
+<div style="background:#333;border-radius:4px;height:6px;margin:6px 2px">
+  <div style="background:{_rc};height:6px;border-radius:4px;width:{int(_sc)}%"></div>
+</div>
+<div style="font-size:11px;color:#aaa;margin-top:6px">TS% {_ts_v}</div>
+</div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # ══ SECTION 4 — WIN / LOSS SPLITS ════════════════════════════════════
+        st.markdown("### ⚖️ Win / Loss Performance Splits")
+        if not _wl.empty:
+            _wl_cols = st.columns(min(len(_wl), 5))
+            for _wi, (_, _wr) in enumerate(_wl.iterrows()):
+                _col_i = _wi % len(_wl_cols)
+                _wp  = _wr.get("w_pts") or 0
+                _lp  = _wr.get("l_pts") or 0
+                _wg  = _wr.get("w_gs")  or 0
+                _lg  = _wr.get("l_gs")  or 0
+                _dif = round(float(_wp) - float(_lp), 1)
+                _tc  = "#4CAF50" if _dif >= 0 else "#F44336"
+                _tl  = "▲ Elevates in Wins" if _dif >= 0 else "▼ Higher vol. in Losses"
+                _wl_cols[_col_i].markdown(f"""
+<div style="background:#1a1a2e;border:1px solid #2a2a3e;border-radius:10px;padding:12px 10px;margin:4px;text-align:center;">
+<div style="color:white;font-weight:700;font-size:13px">{_wr['name']}</div>
+<div style="color:{_tc};font-size:11px;margin:3px 0">{_tl}</div>
+<div style="display:flex;gap:6px;margin:8px 0;justify-content:center;">
+  <div style="background:#4CAF5033;border:1px solid #4CAF50;border-radius:6px;padding:6px 12px">
+    <div style="color:#4CAF50;font-size:10px;font-weight:700">WINS</div>
+    <div style="color:white;font-size:20px;font-weight:900">{_wp}</div>
+    <div style="color:#888;font-size:10px">GS {_wg}</div>
+  </div>
+  <div style="background:#F4433633;border:1px solid #F44336;border-radius:6px;padding:6px 12px">
+    <div style="color:#F44336;font-size:10px;font-weight:700">LOSS</div>
+    <div style="color:white;font-size:20px;font-weight:900">{_lp}</div>
+    <div style="color:#888;font-size:10px">GS {_lg}</div>
+  </div>
+</div>
+<div style="font-size:11px;color:#888">Δ pts: <span style="color:{_tc};font-weight:700">{_dif:+.1f}</span></div>
+</div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # ══ SECTION 5 — QUARTER BREAKDOWN ════════════════════════════════════
+        st.markdown("### 🕐 Quarter-by-Quarter Breakdown")
+        if _momentum:
+            _us_avg   = _momentum.get("us_avg",   [0,0,0,0])
+            _opp_avg  = _momentum.get("them_avg", [0,0,0,0])
+            _best_q   = _momentum.get("us_best_quarter",  "Q1")
+            _worst_q  = _momentum.get("us_worst_quarter", "Q4")
+            _q_labels = ["Q1", "Q2", "Q3", "Q4"]
+            _q_cols   = st.columns(4)
+            for _qi, _ql in enumerate(_q_labels):
+                _uv = _us_avg[_qi]  if _qi < len(_us_avg)  else 0
+                _ov = _opp_avg[_qi] if _qi < len(_opp_avg) else 0
+                _dv = round(_uv - _ov, 1)
+                _is_best  = (_ql == _best_q)
+                _is_worst = (_ql == _worst_q)
+                _qc = "#4CAF50" if _is_best else ("#F44336" if _is_worst else ("#2196F3" if _dv >= 0 else "#FF9800"))
+                _badge = "🏆 BEST" if _is_best else ("⚠️ WORST" if _is_worst else ("✅ WIN" if _dv >= 0 else "📉 LOSE"))
+                _q_cols[_qi].markdown(f"""
+<div style="background:{_qc}22;border:2px solid {_qc};border-radius:10px;padding:16px 10px;margin:4px;text-align:center;">
+<div style="color:{_qc};font-size:24px;font-weight:900">{_ql}</div>
+<div style="color:white;font-size:30px;font-weight:900;line-height:1.1">{_uv:.1f}</div>
+<div style="font-size:11px;color:#aaa;margin:2px 0">avg pts scored</div>
+<div style="font-size:12px;color:#888">Opp: {_ov:.1f}</div>
+<div style="color:{_qc};font-size:16px;font-weight:700;margin:4px 0">{_dv:+.1f} margin</div>
+<div style="background:{_qc}33;color:{_qc};font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:4px">{_badge}</div>
+</div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # ══ SECTION 6 — SHOOTING EFFICIENCY SNAPSHOT ═════════════════════════
+        st.markdown("### 🎯 Shooting Efficiency Snapshot")
+        if not _adv.empty and "ts_pct" in _adv.columns:
+            _adv_s   = _adv.dropna(subset=["ts_pct"]).sort_values("ts_pct", ascending=False).reset_index(drop=True)
+            _eff_c   = st.columns(min(len(_adv_s), 5))
+            for _ei, (_, _er) in enumerate(_adv_s.iterrows()):
+                if _ei >= len(_eff_c):
+                    break
+                _tv = _er.get("ts_pct")  or 0
+                _fv = _er.get("fg_pct")  or 0
+                _pv = _er.get("three_pct") or 0
+                _ftv= _er.get("ft_pct")  or 0
+                _ec = "#4CAF50" if _tv >= 55 else ("#FFC107" if _tv >= 45 else "#F44336")
+                _eff_c[_ei].markdown(f"""
+<div style="background:#1a1a2e;border:1px solid {_ec};border-radius:10px;padding:14px 10px;margin:4px;text-align:center;">
+<div style="color:white;font-weight:700;font-size:13px">{_er['name']}</div>
+<div style="color:{_ec};font-size:28px;font-weight:900;line-height:1.1">{_tv}%</div>
+<div style="font-size:10px;color:#777;margin-bottom:8px">True Shooting %</div>
+<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;font-size:11px">
+  <div style="background:#222;border-radius:4px;padding:3px 7px"><span style="color:#aaa">FG</span> <b style="color:white">{_fv}%</b></div>
+  <div style="background:#222;border-radius:4px;padding:3px 7px"><span style="color:#aaa">3P</span> <b style="color:white">{_pv}%</b></div>
+  <div style="background:#222;border-radius:4px;padding:3px 7px"><span style="color:#aaa">FT</span> <b style="color:white">{_ftv}%</b></div>
+</div>
+</div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # ══ SECTION 7 — FULL INSIGHTS BOARD (2-col cards) ════════════════════
+        st.markdown("### 💡 Full Insights Board")
+        _CAT_CLR = {
+            "Team Momentum":       "#1E88E5",
+            "Ball Security":       "#F44336",
+            "Shooting Efficiency": "#4CAF50",
+            "Form — Hot":          "#FF5722",
+            "Form — Cold":         "#78909C",
+            "Win Correlation":     "#9C27B0",
+            "Playmaking":          "#00BCD4",
+            "Resilience":          "#8BC34A",
+            "Performance Index":   "#FFC107",
+            "Net Rating Trend":    "#3F51B5",
+            "Rebounding":          "#795548",
+        }
+        if not _ins:
             st.info("Not enough data for insights yet. Add more games.")
         else:
-            CATEGORY_COLORS = {
-                "Team Momentum":    "#1E88E5",
-                "Ball Security":    "#F44336",
-                "Shooting Efficiency": "#4CAF50",
-                "Form — Hot":      "#FF5722",
-                "Form — Cold":     "#78909C",
-                "Win Correlation":  "#9C27B0",
-                "Playmaking":       "#00BCD4",
-                "Resilience":       "#8BC34A",
-                "Performance Index":"#FFC107",
-                "Net Rating Trend": "#3F51B5",
-                "Rebounding":       "#795548",
-            }
-            # Group by category
-            seen_cats = []
-            for ins in insights:
-                cat = ins["category"]
-                if cat not in seen_cats:
-                    seen_cats.append(cat)
-
-            for cat in seen_cats:
-                cat_insights = [i for i in insights if i["category"] == cat]
-                color = CATEGORY_COLORS.get(cat, "#607D8B")
-                st.markdown(f"""
-<div style="border-left: 4px solid {color}; padding: 4px 12px; margin: 8px 0;">
-<span style="color:{color}; font-weight:bold; font-size:12px; text-transform:uppercase; letter-spacing:1px">{cat}</span>
+            def _ins_card(col, ins):
+                _cc = _CAT_CLR.get(ins["category"], "#607D8B")
+                col.markdown(f"""
+<div style="background:{_cc}11;border:1px solid {_cc}55;border-radius:10px;padding:14px 16px;margin:6px 0;">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+  <span style="font-size:22px">{ins['icon']}</span>
+  <span style="background:{_cc}33;color:{_cc};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:2px 8px;border-radius:20px">{ins['category']}</span>
+</div>
+<div style="color:white;font-weight:600;font-size:13px;margin-bottom:4px">{ins['title']}</div>
+<div style="color:#aaa;font-size:11px;line-height:1.5">{ins['detail']}</div>
 </div>""", unsafe_allow_html=True)
-                for ins in cat_insights:
-                    with st.container():
-                        icol, tcol = st.columns([1, 15])
-                        icol.markdown(f"## {ins['icon']}")
-                        tcol.markdown(f"**{ins['title']}**")
-                        tcol.caption(ins["detail"])
-                st.divider()
 
-        # Summary scorecard
-        if not games:
-            pass
-        else:
-            st.markdown("### 📋 Quick Scorecard")
-            sc1, sc2, sc3 = st.columns(3)
-            _impact = get_player_impact_index(games)
-            _streaks = get_hot_cold_streaks(games)
-            hot_count  = sum(1 for d in _streaks.values() if "HOT"  in d["status"])
-            cold_count = sum(1 for d in _streaks.values() if "COLD" in d["status"])
-            sc1.metric("🔥 Hot Players", hot_count)
-            sc2.metric("❄️ Cold Players", cold_count)
-            if not _impact.empty:
-                sc3.metric("🏆 Top Impact", f"{_impact.iloc[0]['name']} ({_impact.iloc[0]['impact_score']})")
+            _gc1, _gc2 = st.columns(2)
+            for _ii, _ins_item in enumerate(_ins):
+                _ins_card(_gc1 if _ii % 2 == 0 else _gc2, _ins_item)
 
 
 # ══════════════════════════════════════════════════════════
