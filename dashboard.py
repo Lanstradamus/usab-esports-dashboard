@@ -1826,23 +1826,41 @@ with tab_ai:
         st.info("No approved games yet.")
     else:
         st.subheader("🧠 AI Insights — Team Quick Look")
-        st.caption("Comprehensive team snapshot. All sections update automatically as games are approved.")
+        st.caption("Comprehensive team snapshot. Use the slider to zoom in on recent games.")
 
-        # ── fetch all data up front ────────────────────────────────────────────
-        _ins      = get_ai_coach_insights(games)
-        _streaks  = get_hot_cold_streaks(games)
-        _impact   = get_player_impact_index(games)
-        _adv      = get_advanced_stats(games)
-        _wl       = get_win_loss_splits(games)
-        _ts_data  = get_team_stats_by_game(games)
-        _momentum = get_momentum_analysis(games)
+        # ── Game window slider ─────────────────────────────────────────────────
+        _total_games = len(games)
+        _slider_opts = sorted(set(list(range(3, _total_games, 2)) + [_total_games]))
+        if not _slider_opts:
+            _slider_opts = [_total_games]
+        _n_games = st.select_slider(
+            "🎮 Game Window — analyze last N games:",
+            options=_slider_opts,
+            value=_total_games,
+            key="ai_game_window",
+            help="Slide left to focus on the most recent games only"
+        )
+        _sorted_all   = sorted(games, key=lambda g: g["date"])
+        _window_games = _sorted_all[-_n_games:]
+        _date_range   = (f"  ·  {_window_games[0]['date']} → {_window_games[-1]['date']}"
+                         if len(_window_games) > 1 else "")
+        st.caption(f"📅 Showing last **{_n_games}** of **{_total_games}** total games{_date_range}")
 
-        total_g    = len(games)
-        _wins      = sum(1 for g in games if g["score"]["us"] > g["score"]["them"])
+        # ── fetch all data up front (scoped to window) ─────────────────────────
+        _ins      = get_ai_coach_insights(_window_games)
+        _streaks  = get_hot_cold_streaks(_window_games)
+        _impact   = get_player_impact_index(_window_games)
+        _adv      = get_advanced_stats(_window_games)
+        _wl       = get_win_loss_splits(_window_games)
+        _ts_data  = get_team_stats_by_game(_window_games)
+        _momentum = get_momentum_analysis(_window_games)
+
+        total_g    = len(_window_games)
+        _wins      = sum(1 for g in _window_games if g["score"]["us"] > g["score"]["them"])
         _losses    = total_g - _wins
         _win_pct   = round(_wins / total_g * 100) if total_g else 0
-        _avg_us    = round(sum(g["score"]["us"]   for g in games) / total_g, 1)
-        _avg_them  = round(sum(g["score"]["them"] for g in games) / total_g, 1)
+        _avg_us    = round(sum(g["score"]["us"]   for g in _window_games) / total_g, 1)
+        _avg_them  = round(sum(g["score"]["them"] for g in _window_games) / total_g, 1)
         _avg_marg  = round(_avg_us - _avg_them, 1)
         _hot_list  = [n for n, d in _streaks.items() if "HOT"  in d["status"]]
         _cold_list = [n for n, d in _streaks.items() if "COLD" in d["status"]]
