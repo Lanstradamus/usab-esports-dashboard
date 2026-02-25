@@ -144,6 +144,24 @@ with st.sidebar:
         st.caption(f"Showing all **{len(_all_games)} games**")
 
     st.divider()
+    st.markdown("### 🎮 Game Window")
+    _gw_total = len(games)
+    _gw_opts  = sorted(set(list(range(3, _gw_total, 2)) + [_gw_total])) if _gw_total >= 3 else [_gw_total]
+    _gw_n     = st.select_slider(
+        "Last N games (all stats):",
+        options=_gw_opts,
+        value=_gw_total,
+        key="global_game_window",
+        help="Filters every single tab — players, trends, AI insights, clutch, analytics, everything",
+    )
+    # Redefine `games` to the selected window — all tabs inherit this automatically
+    _gw_sorted = sorted(games, key=lambda g: g["date"])
+    games      = _gw_sorted[-_gw_n:]
+    _gw_range  = (f"{games[0]['date']} → {games[-1]['date']}"
+                  if len(games) > 1 else games[0]["date"] if games else "—")
+    st.caption(f"📅 **{_gw_n} of {_gw_total}** games  ·  {_gw_range}")
+
+    st.divider()
     st.markdown("### 📌 Data Notes")
     st.caption(
         "Stats are OCR-extracted from box score screenshots. "
@@ -1826,41 +1844,23 @@ with tab_ai:
         st.info("No approved games yet.")
     else:
         st.subheader("🧠 AI Insights — Team Quick Look")
-        st.caption("Comprehensive team snapshot. Use the slider to zoom in on recent games.")
+        st.caption("Comprehensive team snapshot. Use the **Game Window** slider in the sidebar to filter all stats.")
 
-        # ── Game window slider ─────────────────────────────────────────────────
-        _total_games = len(games)
-        _slider_opts = sorted(set(list(range(3, _total_games, 2)) + [_total_games]))
-        if not _slider_opts:
-            _slider_opts = [_total_games]
-        _n_games = st.select_slider(
-            "🎮 Game Window — analyze last N games:",
-            options=_slider_opts,
-            value=_total_games,
-            key="ai_game_window",
-            help="Slide left to focus on the most recent games only"
-        )
-        _sorted_all   = sorted(games, key=lambda g: g["date"])
-        _window_games = _sorted_all[-_n_games:]
-        _date_range   = (f"  ·  {_window_games[0]['date']} → {_window_games[-1]['date']}"
-                         if len(_window_games) > 1 else "")
-        st.caption(f"📅 Showing last **{_n_games}** of **{_total_games}** total games{_date_range}")
+        # ── fetch all data up front (scoped to global game window) ─────────────
+        _ins      = get_ai_coach_insights(games)
+        _streaks  = get_hot_cold_streaks(games)
+        _impact   = get_player_impact_index(games)
+        _adv      = get_advanced_stats(games)
+        _wl       = get_win_loss_splits(games)
+        _ts_data  = get_team_stats_by_game(games)
+        _momentum = get_momentum_analysis(games)
 
-        # ── fetch all data up front (scoped to window) ─────────────────────────
-        _ins      = get_ai_coach_insights(_window_games)
-        _streaks  = get_hot_cold_streaks(_window_games)
-        _impact   = get_player_impact_index(_window_games)
-        _adv      = get_advanced_stats(_window_games)
-        _wl       = get_win_loss_splits(_window_games)
-        _ts_data  = get_team_stats_by_game(_window_games)
-        _momentum = get_momentum_analysis(_window_games)
-
-        total_g    = len(_window_games)
-        _wins      = sum(1 for g in _window_games if g["score"]["us"] > g["score"]["them"])
+        total_g    = len(games)
+        _wins      = sum(1 for g in games if g["score"]["us"] > g["score"]["them"])
         _losses    = total_g - _wins
         _win_pct   = round(_wins / total_g * 100) if total_g else 0
-        _avg_us    = round(sum(g["score"]["us"]   for g in _window_games) / total_g, 1)
-        _avg_them  = round(sum(g["score"]["them"] for g in _window_games) / total_g, 1)
+        _avg_us    = round(sum(g["score"]["us"]   for g in games) / total_g, 1)
+        _avg_them  = round(sum(g["score"]["them"] for g in games) / total_g, 1)
         _avg_marg  = round(_avg_us - _avg_them, 1)
         _hot_list  = [n for n, d in _streaks.items() if "HOT"  in d["status"]]
         _cold_list = [n for n, d in _streaks.items() if "COLD" in d["status"]]
