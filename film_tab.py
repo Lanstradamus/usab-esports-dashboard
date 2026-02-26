@@ -208,6 +208,8 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
         placeholder="C:/Users/lance/Videos/game.mp4",
         key="film_vid_path",
     )
+    # Strip surrounding quotes that Windows sometimes adds when copy-pasting paths
+    vid_path = vid_path.strip().strip('"').strip("'")
 
     # Team names — left defaults to USA but can be anything
     tc1, tc2, tc3 = st.columns(3)
