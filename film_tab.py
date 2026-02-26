@@ -241,6 +241,11 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
     before_sec = c3.slider("Seconds BEFORE basket", 10, 45, 30, key="film_before")
     after_sec  = c4.slider("Seconds AFTER basket",   1, 10,  2, key="film_after")
 
+    test_mode = st.checkbox(
+        "⚡ Quick test — scan first 5 min only (confirm clips work before full run)",
+        key="film_test_mode",
+    )
+
     st.divider()
 
     # ── Scan + Clip button ────────────────────────────────────────────────────
@@ -290,6 +295,7 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
                 vid_path,
                 sample_interval=2.0,
                 read_stats=False,
+                max_seconds=300 if test_mode else None,
                 progress_callback=on_scan,
             )
 
