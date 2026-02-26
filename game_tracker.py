@@ -714,13 +714,13 @@ def batch_extract_clips(
     def _safe(s: str) -> str:
         return re.sub(r'[^\w\-]', '_', s)
 
-    # Filter events
+    # Filter events — include score_jump (missed sampling window) for both sides
     if team_side == "both":
-        target_types = {"score_left", "score_right"}
+        target_types = {"score_left", "score_right", "score_jump"}
     elif team_side == "left":
-        target_types = {"score_left"}
+        target_types = {"score_left", "score_jump"}
     else:
-        target_types = {"score_right"}
+        target_types = {"score_right", "score_jump"}
 
     scoring = [e for e in events if e.get("event_type") in target_types]
     clips   = []
