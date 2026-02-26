@@ -144,35 +144,47 @@ def _render_clip_table(clips: list, key_prefix: str) -> None:
 
 # ── Library browser ────────────────────────────────────────────────────────────
 
-def _render_library(sessions: list, team_key: str, label: str, color: str) -> None:
-    """Browse sessions for one team side (usa_clips or opp_clips)."""
-    relevant = [s for s in sessions if s.get(team_key)]
+def _render_library(sessions: list, team_key: str) -> None:
+    """
+    Browse sessions for one clip side.
+    team_key = "left_clips" or "right_clips"
+    Falls back to legacy "usa_clips"/"opp_clips" keys for old sessions.
+    """
+    legacy_map = {"left_clips": "usa_clips", "right_clips": "opp_clips"}
+    relevant = [
+        s for s in sessions
+        if s.get(team_key) or s.get(legacy_map.get(team_key, ""))
+    ]
     if not relevant:
-        st.info(f"No {label} film yet. Use the **📹 Add New Game** tab to generate clips.")
+        st.info("No clips here yet. Use the **📹 Add New Game** tab to generate clips.")
         return
 
-    # Sort newest first
     relevant = sorted(relevant, key=lambda s: s.get("date", ""), reverse=True)
 
     for s in relevant:
-        clips   = s.get(team_key, [])
+        # Support both new schema (left_team/right_team) and legacy (opponent)
+        clips = s.get(team_key) or s.get(legacy_map.get(team_key, ""), [])
+
+        left_t  = s.get("left_team")  or "Left"
+        right_t = s.get("right_team") or s.get("opponent", "Right")
+        team_label = left_t if team_key == "left_clips" else right_t
+
         n_ok    = sum(1 for c in clips if not c.get("error") and os.path.exists(c.get("path", "")))
         badge   = f"🏀 {n_ok} baskets" if n_ok > 0 else "⚠️ clips missing"
-        header  = f"**{s['label']}**  ·  {badge}"
+        header  = f"**{s['label']}**  ·  clipping **{team_label}**  ·  {badge}"
         sess_id = s["id"]
 
         with st.expander(header, expanded=False):
-            mc1, mc2, mc3 = st.columns(3)
+            mc1, mc2, mc3, mc4 = st.columns(4)
             mc1.caption(f"📅 {s.get('date', '?')}")
-            mc2.caption(f"🆚 {s.get('opponent', '?')}")
-            mc3.caption(f"🎬 Generated {s.get('processed_at', '?')[:10]}")
+            mc2.caption(f"⬅️ {left_t}")
+            mc3.caption(f"➡️ {right_t}")
+            mc4.caption(f"🎬 {s.get('processed_at', '?')[:10]}")
 
             _render_clip_table(clips, key_prefix=f"{sess_id}_{team_key}")
 
-            # Danger zone — delete session
             with st.popover("🗑️ Delete session"):
-                st.warning("This removes the session from the library index. "
-                           "Clip files on disk are NOT deleted.")
+                st.warning("Removes from library index — clip files on disk are NOT deleted.")
                 if st.button("Confirm delete", key=f"del_{sess_id}_{team_key}"):
                     lib = _load_library()
                     lib["sessions"] = [x for x in lib["sessions"] if x["id"] != sess_id]
@@ -186,8 +198,8 @@ def _render_library(sessions: list, team_key: str, label: str, color: str) -> No
 def _render_add_game(ffmpeg_ok: bool) -> None:
     st.markdown("### 📹 Scan Video & Generate Clips")
     st.caption(
-        "Point to a local game recording. The tool reads the scoreboard every 2 seconds, "
-        "detects every basket, and cuts a clip around each one using ffmpeg (stream copy — no re-encoding)."
+        "Works for any game — USA vs opponent **or** a scouting video of two other teams. "
+        "Just name both teams and pick which side to clip."
     )
 
     # ── Inputs ────────────────────────────────────────────────────────────────
@@ -197,17 +209,31 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
         key="film_vid_path",
     )
 
-    c1, c2 = st.columns(2)
-    opponent_name = c1.text_input("Opponent name", placeholder="Legendary Weapons", key="film_opponent")
-    game_date     = c2.date_input("Game date", value=date.today(), key="film_date")
+    # Team names — left defaults to USA but can be anything
+    tc1, tc2, tc3 = st.columns(3)
+    left_team  = tc1.text_input("⬅️ Left team (scoreboard left)",  value="USA",   key="film_left_team")
+    right_team = tc2.text_input("➡️ Right team (scoreboard right)", placeholder="Legendary Weapons", key="film_right_team")
+    game_date  = tc3.date_input("📅 Game date", value=date.today(), key="film_date")
 
+    # Dynamic radio options using the entered team names
+    left_label  = left_team  or "Left team"
+    right_label = right_team or "Right team"
     team_choice = st.radio(
         "Which team's baskets to clip?",
-        options=["🏀 USA (left score)", "🔴 Opponent (right score)", "⚡ Both"],
+        options=[
+            f"🏀 {left_label} baskets (left score)",
+            f"🔴 {right_label} baskets (right score)",
+            "⚡ Both teams",
+        ],
         horizontal=True,
         key="film_team_choice",
     )
-    team_side = "left" if "USA" in team_choice else ("right" if "Opponent" in team_choice else "both")
+    if "Both" in team_choice:
+        team_side = "both"
+    elif left_label in team_choice:
+        team_side = "left"
+    else:
+        team_side = "right"
 
     c3, c4 = st.columns(2)
     before_sec = c3.slider("Seconds BEFORE basket", 10, 45, 30, key="film_before")
@@ -216,9 +242,11 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
     st.divider()
 
     # ── Scan + Clip button ────────────────────────────────────────────────────
-    can_run = bool(vid_path and opponent_name and ffmpeg_ok)
+    can_run = bool(vid_path and right_team and ffmpeg_ok)
     if not ffmpeg_ok:
         st.warning("Install ffmpeg first (see instructions above).", icon="⚠️")
+    elif not right_team:
+        st.info("Enter both team names above to enable scanning.", icon="ℹ️")
 
     scan_btn = st.button(
         "🎬 Scan & Clip",
@@ -232,15 +260,17 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
             st.error(f"File not found: `{vid_path}`")
             return
 
-        date_str  = game_date.strftime("%Y-%m-%d")
-        sess_id   = _session_id(date_str, opponent_name)
-        sess_label = f"{game_date.strftime('%b %d')} vs {opponent_name}"
+        date_str   = game_date.strftime("%Y-%m-%d")
+        sess_id    = _session_id(date_str, f"{left_team}-vs-{right_team}")
+        sess_label = f"{game_date.strftime('%b %d')} · {left_team} vs {right_team}"
 
-        # Output dirs
-        usa_out = _LIB_DIR / "USA"      / sess_id
-        opp_out = _LIB_DIR / "Opponent" / sess_id
-        usa_out.mkdir(parents=True, exist_ok=True)
-        opp_out.mkdir(parents=True, exist_ok=True)
+        # Output dirs named after actual teams
+        left_safe  = left_team.replace(" ", "_")
+        right_safe = right_team.replace(" ", "_")
+        left_out  = _LIB_DIR / left_safe  / sess_id
+        right_out = _LIB_DIR / right_safe / sess_id
+        left_out.mkdir(parents=True, exist_ok=True)
+        right_out.mkdir(parents=True, exist_ok=True)
 
         pb     = st.progress(0.0, text="Loading EasyOCR (first run ~30s)…")
         status = st.empty()
@@ -250,10 +280,8 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
 
             # ── Step 1: Scan video for score events ───────────────────────────
             status.info("Step 1/2 — Scanning video for scoring events…")
-            scan_pct = [0.0]
 
             def on_scan(p):
-                scan_pct[0] = p
                 pb.progress(p * 0.8, text=f"Scanning… {int(p*100)}%")
 
             game_data = mod.process_video(
@@ -270,46 +298,44 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
 
             # ── Step 2: Extract clips ─────────────────────────────────────────
             status.info("Step 2/2 — Cutting clips with ffmpeg…")
-            clip_pct = [0.0]
 
             def on_clip(p):
-                clip_pct[0] = p
                 pb.progress(0.8 + p * 0.2, text=f"Clipping… {int(p*100)}%")
 
-            usa_clips = []
-            opp_clips = []
+            left_clips  = []
+            right_clips = []
 
             if team_side in ("left", "both"):
-                usa_clips = mod.batch_extract_clips(
-                    vid_path, events, "left", str(usa_out),
+                left_clips = mod.batch_extract_clips(
+                    vid_path, events, "left", str(left_out),
                     before_sec, after_sec,
                     progress_cb=on_clip if team_side == "left" else None,
                 )
             if team_side in ("right", "both"):
-                opp_clips = mod.batch_extract_clips(
-                    vid_path, events, "right", str(opp_out),
+                right_clips = mod.batch_extract_clips(
+                    vid_path, events, "right", str(right_out),
                     before_sec, after_sec,
                     progress_cb=on_clip,
                 )
 
             pb.progress(1.0, text="Done!")
             status.success(
-                f"✅ Generated **{len(usa_clips)} USA clip(s)** and "
-                f"**{len(opp_clips)} Opponent clip(s)** for {sess_label}."
+                f"✅ **{left_team}**: {len(left_clips)} clip(s)  ·  "
+                f"**{right_team}**: {len(right_clips)} clip(s)  —  {sess_label}"
             )
 
             # ── Save to library ───────────────────────────────────────────────
             lib = _load_library()
-            # Remove existing session with same id (re-generation)
             lib["sessions"] = [s for s in lib["sessions"] if s["id"] != sess_id]
             lib["sessions"].append({
                 "id":           sess_id,
                 "label":        sess_label,
-                "opponent":     opponent_name,
+                "left_team":    left_team,
+                "right_team":   right_team,
                 "date":         date_str,
                 "video_path":   vid_path,
-                "usa_clips":    usa_clips,
-                "opp_clips":    opp_clips,
+                "left_clips":   left_clips,
+                "right_clips":  right_clips,
                 "processed_at": datetime.now().isoformat(timespec="seconds"),
             })
             _save_library(lib)
@@ -325,8 +351,8 @@ def _render_add_game(ffmpeg_ok: bool) -> None:
 def render_film_tab() -> None:
     st.subheader("🎬 Film Breakdown")
     st.caption(
-        "Auto-clip every basket from a game recording. "
-        "Organised by USA / Opponent — browse, preview info, and download."
+        "Auto-clip every basket from any game recording — USA games or pure scouting film. "
+        "Name both teams, pick which side to clip, and download organised clips."
     )
 
     ffmpeg_ok = _ffmpeg_banner()
@@ -334,19 +360,28 @@ def render_film_tab() -> None:
     lib      = _load_library()
     sessions = lib.get("sessions", [])
 
-    inner_add, inner_usa, inner_opp = st.tabs([
+    # Count clips across both new schema and legacy keys
+    def _count(key, legacy):
+        return sum(len(s.get(key) or s.get(legacy, [])) for s in sessions)
+
+    n_left  = _count("left_clips",  "usa_clips")
+    n_right = _count("right_clips", "opp_clips")
+
+    inner_add, inner_left, inner_right = st.tabs([
         "📹 Add New Game",
-        f"🏀 USA Offense ({sum(len(s.get('usa_clips',[])) for s in sessions)} clips)",
-        f"🔴 Opponent Film ({sum(len(s.get('opp_clips',[])) for s in sessions)} clips)",
+        f"🏀 Left Team Film ({n_left} clips)",
+        f"🔴 Right Team Film ({n_right} clips)",
     ])
 
     with inner_add:
         _render_add_game(ffmpeg_ok)
 
-    with inner_usa:
-        st.markdown("### 🏀 USA Offense — All Sessions")
-        _render_library(sessions, "usa_clips", "USA", "#1565C0")
+    with inner_left:
+        st.markdown("### 🏀 Left Team Film — All Sessions")
+        st.caption("Clips of the **left scoreboard team** scoring (typically USA in your own games).")
+        _render_library(sessions, "left_clips")
 
-    with inner_opp:
-        st.markdown("### 🔴 Opponent Film — All Sessions")
-        _render_library(sessions, "opp_clips", "Opponent", "#C62828")
+    with inner_right:
+        st.markdown("### 🔴 Right Team Film — All Sessions")
+        st.caption("Clips of the **right scoreboard team** scoring (opponent in your games, or scouted team).")
+        _render_library(sessions, "right_clips")
