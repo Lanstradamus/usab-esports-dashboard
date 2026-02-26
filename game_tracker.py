@@ -312,6 +312,10 @@ def process_frame(frame, tracker: GameTracker, timestamp_sec: float,
                   read_scores=True, read_stats=False) -> Optional[FrameData]:
     """Process a single frame and detect events."""
 
+    # Normalize to 1920x1080 so all hardcoded region coords work at any input resolution
+    if frame.shape[0] != 1080 or frame.shape[1] != 1920:
+        frame = cv2.resize(frame, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+
     data = FrameData(timestamp_sec=timestamp_sec)
 
     if not is_gameplay_frame(frame):
