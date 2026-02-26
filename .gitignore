@@ -33,7 +33,6 @@ add_opponent_confidence.py
 auto_extract.py
 build_review_tab.py
 extract_screenshot.py
-game_tracker.py
 update_approved_opponents.py
 update_opponents_1_11.py
 update_opponents_batch.py

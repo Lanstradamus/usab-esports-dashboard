@@ -19,6 +19,7 @@ from pending import load_pending, approve_game, reject_game
 from scout_data import (load_scouting, save_scouting,
                         approve_scout_game, reject_scout_game,
                         get_scout_player_profiles, get_scout_team_tendencies)
+from film_tab import render_film_tab
 
 st.set_page_config(
     page_title="USAB Esports Dashboard",
@@ -209,7 +210,7 @@ _scout_team    = _scout_data.get("scout_team", "Opponent")
 
 tab_review, tab_ai, tab_games, tab_players, tab_compare, tab_advanced, tab_scouting, \
 tab_lineup, tab_teams, tab_analytics, tab_opp_intel, tab_clutch, \
-tab_trends, tab_pix, tab_scout = st.tabs([
+tab_trends, tab_pix, tab_scout, tab_film = st.tabs([
     f"📥 Review Queue ({len(pending_games)})",
     "🧠 AI Insights",
     "📋 Games",
@@ -225,6 +226,7 @@ tab_trends, tab_pix, tab_scout = st.tabs([
     "📈 Trends",
     "🏆 Perf Index",
     f"🔬 Scout ({_scout_team})",
+    "🎬 Film",
 ])
 
 # ══════════════════════════════════════════════════════════
@@ -3002,4 +3004,11 @@ with tab_scout:
                 st.metric("Off Rtg",         _tend2.get("off_rtg","N/A"))
             else:
                 st.info("Add scouting games to see their side of the matchup preview.")
+
+
+# ══════════════════════════════════════════════════════════
+# TAB 16: FILM BREAKDOWN
+# ══════════════════════════════════════════════════════════
+with tab_film:
+    render_film_tab()
 
